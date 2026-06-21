@@ -1,6 +1,5 @@
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
 import { useAppStore } from '../store/auth';
 import { api } from '../api';
 import { toCsv, toBind, simplify, parseImport } from '../dnsio';

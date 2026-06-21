@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
+import zhCn from 'element-plus/es/locale/lang/zh-cn';
 import { useAppStore } from './store/auth';
 import { api } from './api';
 
@@ -116,6 +116,7 @@ async function disable2fa() {
 </script>
 
 <template>
+  <el-config-provider :locale="zhCn">
   <router-view v-if="!store.authenticated" />
 
   <el-container v-else style="height: 100%">
@@ -218,4 +219,5 @@ async function disable2fa() {
       <el-button v-else type="primary" :loading="twofaBusy" @click="start2fa">开始设置</el-button>
     </template>
   </el-dialog>
+  </el-config-provider>
 </template>
