@@ -6,6 +6,7 @@ import {
   listAllRecords,
   createRecord,
   updateRecord,
+  patchRecord,
   deleteRecord,
   CloudflareError,
 } from '../cf/client.js';
@@ -135,13 +136,13 @@ export default async function recordRoutes(fastify) {
   });
 
   // POST /api/zones/:zoneId/import
-  //   { accountId, zoneName, records: [{type,name,content,ttl,proxied,priority}] }
-  // Upsert by (type, name): an incoming record matching an existing one OVERWRITES
-  // it; otherwise it is created. Existing records absent from the payload are left
-  // untouched (no deletion).
+  //   { accountId, zoneName, records: [...], dryRun?, deleteMissing? }
+  // Upsert by (type, name): a matching record OVERWRITES; others are created.
+  // deleteMissing (full sync) also removes existing records absent from the file
+  // (except Cloudflare-managed SOA/NS). dryRun computes the plan and writes nothing.
   fastify.post('/:zoneId/import', async (request, reply) => {
     const { zoneId } = request.params;
-    const { accountId, zoneName, records } = request.body || {};
+    const { accountId, zoneName, records, dryRun, deleteMissing } = request.body || {};
     const token = tokenForAccount(accountId);
     if (!token) return reply.code(400).send({ error: 'invalid_account', message: '账号无效' });
     if (!zoneName) return reply.code(400).send({ error: 'invalid_input', message: '缺少 zoneName' });
@@ -161,8 +162,7 @@ export default async function recordRoutes(fastify) {
 
     // Buckets of existing records per (type, fqdn). When several records share a
     // key (round-robin A, multi-MX), an incoming row first claims the existing
-    // record with matching content, so a sibling's identity is never clobbered;
-    // otherwise it claims the next unclaimed one (positional fallback).
+    // record with matching content, so a sibling's identity is never clobbered.
     const byKey = new Map();
     for (const r of existing) {
       const k = recordKey(r.type, r.name);
@@ -170,7 +170,7 @@ export default async function recordRoutes(fastify) {
       byKey.get(k).push(r);
     }
 
-    const result = { total: records.length, created: 0, updated: 0, failed: 0, errors: [] };
+    const result = { total: records.length, created: 0, updated: 0, deleted: 0, failed: 0, errors: [] };
 
     // Phase 1 — plan synchronously (bucket matching mutates state, so it must be serial).
     const plan = [];
@@ -207,14 +207,38 @@ export default async function recordRoutes(fastify) {
       }
     }
 
-    // Phase 2 — execute the plan with bounded concurrency. Counter increments are
-    // race-free: they run synchronously between awaits on JS's single thread.
-    const audit = (action, res) =>
+    // Leftover existing records (unmatched) — full-sync deletion candidates.
+    // Cloudflare-managed SOA/NS are never deleted.
+    const leftovers = [];
+    for (const bucket of byKey.values()) {
+      for (const r of bucket) if (r.type !== 'SOA' && r.type !== 'NS') leftovers.push(r);
+    }
+
+    const willCreate = plan.filter((p) => !p.targetId).length;
+    const willUpdate = plan.filter((p) => p.targetId).length;
+    const willDelete = deleteMissing ? leftovers.length : 0;
+
+    if (dryRun) {
+      return {
+        dryRun: true,
+        total: records.length,
+        willCreate,
+        willUpdate,
+        willDelete,
+        failed: result.failed,
+        errors: result.errors.sort((a, b) => a.line - b.line),
+      };
+    }
+
+    const audit = (action, res, source) =>
       writeAudit({
         username: request.user.username, accountId, zoneId, zoneName,
         action, rrType: res.type, rrName: res.name,
-        detail: { source: 'import', content: res.content }, clientIp: clientIp(request),
+        detail: { source, content: res.content }, clientIp: clientIp(request),
       });
+
+    // Phase 2 — upserts with bounded concurrency. Counter increments are race-free
+    // (they run synchronously between awaits on JS's single thread).
     let cursor = 0;
     async function worker() {
       while (cursor < plan.length) {
@@ -223,11 +247,11 @@ export default async function recordRoutes(fastify) {
           if (item.targetId) {
             const res = await updateRecord(token, zoneId, item.targetId, item.body);
             result.updated++;
-            audit('update', res);
+            audit('update', res, 'import');
           } else {
             const res = await createRecord(token, zoneId, item.body);
             result.created++;
-            audit('create', res);
+            audit('create', res, 'import');
           }
         } catch (e) {
           result.failed++;
@@ -240,7 +264,107 @@ export default async function recordRoutes(fastify) {
     }
     await Promise.all(Array.from({ length: Math.min(IMPORT_CONCURRENCY, plan.length) }, worker));
 
-    result.errors.sort((a, b) => a.line - b.line);
+    // Phase 3 — full-sync deletion of leftovers.
+    if (deleteMissing && leftovers.length) {
+      let dc = 0;
+      async function delWorker() {
+        while (dc < leftovers.length) {
+          const r = leftovers[dc++];
+          try {
+            await deleteRecord(token, zoneId, r.id);
+            result.deleted++;
+            audit('delete', r, 'import-sync');
+          } catch (e) {
+            result.failed++;
+            result.errors.push({
+              type: r.type, name: r.name,
+              message: e instanceof CloudflareError ? e.message : String((e && e.message) || e),
+            });
+          }
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(IMPORT_CONCURRENCY, leftovers.length) }, delWorker));
+    }
+
+    result.errors.sort((a, b) => (a.line || 0) - (b.line || 0));
+    return result;
+  });
+
+  // POST /api/zones/:zoneId/records/bulk-delete  { accountId, zoneName, ids:[] }
+  fastify.post('/:zoneId/records/bulk-delete', async (request, reply) => {
+    const { zoneId } = request.params;
+    const { accountId, zoneName, ids } = request.body || {};
+    const token = tokenForAccount(accountId);
+    if (!token) return reply.code(400).send({ error: 'invalid_account', message: '账号无效' });
+    if (!Array.isArray(ids) || !ids.length) {
+      return reply.code(400).send({ error: 'invalid_input', message: '没有选中记录' });
+    }
+    if (ids.length > IMPORT_MAX) {
+      return reply.code(413).send({ error: 'too_many_records', message: `单次最多 ${IMPORT_MAX} 条` });
+    }
+    const result = { deleted: 0, failed: 0, errors: [] };
+    let cursor = 0;
+    async function worker() {
+      while (cursor < ids.length) {
+        const id = ids[cursor++];
+        try {
+          await deleteRecord(token, zoneId, id);
+          result.deleted++;
+          writeAudit({
+            username: request.user.username, accountId, zoneId, zoneName,
+            action: 'delete', detail: { source: 'bulk', recordId: id }, clientIp: clientIp(request),
+          });
+        } catch (e) {
+          result.failed++;
+          result.errors.push({ id, message: e instanceof CloudflareError ? e.message : String((e && e.message) || e) });
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(IMPORT_CONCURRENCY, ids.length) }, worker));
+    return result;
+  });
+
+  // POST /api/zones/:zoneId/records/bulk-patch  { accountId, zoneName, ids:[], patch:{ttl?,proxied?} }
+  fastify.post('/:zoneId/records/bulk-patch', async (request, reply) => {
+    const { zoneId } = request.params;
+    const { accountId, zoneName, ids, patch } = request.body || {};
+    const token = tokenForAccount(accountId);
+    if (!token) return reply.code(400).send({ error: 'invalid_account', message: '账号无效' });
+    if (!Array.isArray(ids) || !ids.length) {
+      return reply.code(400).send({ error: 'invalid_input', message: '没有选中记录' });
+    }
+    if (ids.length > IMPORT_MAX) {
+      return reply.code(413).send({ error: 'too_many_records', message: `单次最多 ${IMPORT_MAX} 条` });
+    }
+    const body = {};
+    if (patch && patch.ttl !== undefined) {
+      const t = Number(patch.ttl);
+      if (Number.isFinite(t) && t > 0) body.ttl = t;
+    }
+    if (patch && patch.proxied !== undefined) body.proxied = !!patch.proxied;
+    if (!Object.keys(body).length) {
+      return reply.code(400).send({ error: 'invalid_input', message: '没有要修改的字段' });
+    }
+    const result = { updated: 0, failed: 0, errors: [] };
+    let cursor = 0;
+    async function worker() {
+      while (cursor < ids.length) {
+        const id = ids[cursor++];
+        try {
+          const res = await patchRecord(token, zoneId, id, body);
+          result.updated++;
+          writeAudit({
+            username: request.user.username, accountId, zoneId, zoneName,
+            action: 'update', rrType: res.type, rrName: res.name,
+            detail: { source: 'bulk', patch: body }, clientIp: clientIp(request),
+          });
+        } catch (e) {
+          result.failed++;
+          result.errors.push({ id, message: e instanceof CloudflareError ? e.message : String((e && e.message) || e) });
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(IMPORT_CONCURRENCY, ids.length) }, worker));
     return result;
   });
 }

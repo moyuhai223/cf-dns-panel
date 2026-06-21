@@ -112,6 +112,12 @@ export async function updateRecord(token, zoneId, recordId, record) {
   return data.result;
 }
 
+/** Partial update (e.g. just ttl or proxied) — used by bulk edits. */
+export async function patchRecord(token, zoneId, recordId, patch) {
+  const data = await cfFetch(token, 'PATCH', `/zones/${zoneId}/dns_records/${recordId}`, { body: patch });
+  return data.result;
+}
+
 export async function deleteRecord(token, zoneId, recordId) {
   const data = await cfFetch(token, 'DELETE', `/zones/${zoneId}/dns_records/${recordId}`);
   return data.result;
