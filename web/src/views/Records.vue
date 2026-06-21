@@ -3,7 +3,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useAppStore } from '../store/auth';
 import { api } from '../api';
-import { toCsv, simplify, parseImport } from '../dnsio';
+import { toCsv, toBind, simplify, parseImport } from '../dnsio';
 
 const store = useAppStore();
 
@@ -214,6 +214,8 @@ async function exportRecords(format) {
     const zone = currentZone.value?.name || 'zone';
     if (format === 'json') {
       downloadFile(`${zone}-dns.json`, JSON.stringify(recs, null, 2), 'application/json');
+    } else if (format === 'bind') {
+      downloadFile(`${zone}.txt`, toBind(recs, zone), 'text/plain;charset=utf-8');
     } else {
       downloadFile(`${zone}-dns.csv`, toCsv(recs), 'text/csv;charset=utf-8');
     }
@@ -361,6 +363,7 @@ async function doImport() {
         <el-dropdown-menu>
           <el-dropdown-item command="csv">导出 CSV</el-dropdown-item>
           <el-dropdown-item command="json">导出 JSON</el-dropdown-item>
+          <el-dropdown-item command="bind">导出 BIND (.txt)</el-dropdown-item>
         </el-dropdown-menu>
       </template>
     </el-dropdown>
@@ -463,8 +466,8 @@ async function doImport() {
     <el-alert type="warning" :closable="false" show-icon style="margin-bottom: 12px">
       <template #default>
         导入规则:<b>同名同类型</b>(二级域名 + 记录类型)的记录会被<b>覆盖更新</b>,不存在的会<b>新增</b>;
-        文件里没有列出的现有记录<b>不会被删除</b>。支持 CSV 或 JSON(可先点「导出」拿到模板);
-        SRV / CAA 等结构化记录请用 <b>JSON</b> 导入,CSV 无法完整表达。单次最多 1000 条。
+        文件里没有列出的现有记录<b>不会被删除</b>。支持 <b>CSV / JSON / BIND(.txt)</b>(自动识别,可先点「导出」拿模板);
+        BIND 即 Cloudflare 的导出格式,导入会跳过 SOA/NS;SRV / CAA 用 JSON 或 BIND 更完整。单次最多 1000 条。
       </template>
     </el-alert>
 

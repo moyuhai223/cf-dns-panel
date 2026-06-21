@@ -7,6 +7,9 @@ import {
   normalizeRecord,
   csvEscape,
   simplify,
+  looksLikeBind,
+  parseBind,
+  toBind,
 } from '../web/src/dnsio.js';
 import { sanitizeRecord, toFqdn, recordKey } from '../server/cf/records-util.js';
 
@@ -170,4 +173,54 @@ test('toFqdn leaves underscore ASCII labels untouched and punycodes IDN', () => 
   assert.equal(toFqdn('_dmarc', 'example.com'), '_dmarc.example.com');
   assert.equal(toFqdn('_acme-challenge.sub', 'example.com'), '_acme-challenge.sub.example.com');
   assert.equal(toFqdn('café', 'example.com'), 'xn--caf-dma.example.com');
+});
+
+/* ------------------------------ BIND format -------------------------------- */
+
+test('looksLikeBind detects BIND but not CSV/JSON', () => {
+  assert.equal(looksLikeBind('www.x.com.\t1\tIN\tA\t1.2.3.4'), true);
+  assert.equal(looksLikeBind(';; Domain: x.com.'), true);
+  assert.equal(looksLikeBind('type,name,content\nA,www,1.2.3.4'), false);
+  assert.equal(looksLikeBind('[{"type":"A"}]'), false);
+});
+
+test('parseBind parses a Cloudflare export, reads cf-proxied, skips SOA/NS', () => {
+  const txt = [
+    ';; SOA Record',
+    'hostloc.tech\t3600\tIN\tSOA\tkip.ns.cloudflare.com. dns.cloudflare.com. 2053368469 10000 2400 604800 3600',
+    ';; NS Records',
+    'hostloc.tech.\t86400\tIN\tNS\tkip.ns.cloudflare.com.',
+    ';; A Records',
+    'www.hostloc.tech.\t1\tIN\tA\t193.123.224.129 ; cf_tags=cf-proxied:false',
+    'arm.hostloc.tech.\t1\tIN\tA\t193.123.224.129 ; cf_tags=cf-proxied:true',
+    'hostloc.tech.\t1\tIN\tMX\t10 mail.hostloc.tech.',
+    'hostloc.tech.\t1\tIN\tTXT\t"v=spf1 include:_spf.google.com ~all"',
+    'hostloc.tech.\t1\tIN\tCAA\t0 issue "letsencrypt.org"',
+  ].join('\n');
+  const recs = parseBind(txt);
+  assert.equal(recs.length, 5); // SOA + NS skipped
+  assert.equal(recs.find((r) => r.name === 'www.hostloc.tech').proxied, false);
+  assert.equal(recs.find((r) => r.name === 'arm.hostloc.tech').proxied, true);
+  const mx = recs.find((r) => r.type === 'MX');
+  assert.equal(mx.priority, 10);
+  assert.equal(mx.content, 'mail.hostloc.tech'); // trailing dot stripped
+  assert.equal(recs.find((r) => r.type === 'TXT').content, 'v=spf1 include:_spf.google.com ~all');
+  assert.deepEqual(recs.find((r) => r.type === 'CAA').data, {
+    flags: 0,
+    tag: 'issue',
+    value: 'letsencrypt.org',
+  });
+});
+
+test('BIND export -> parse round-trip keeps proxied and quoted-semicolon TXT', () => {
+  const recs = [
+    { type: 'A', name: 'www.x.com', content: '1.2.3.4', ttl: 1, proxied: true },
+    { type: 'TXT', name: 'x.com', content: 'hello; with ; semicolons', ttl: 300, proxied: false },
+    { type: 'MX', name: 'x.com', content: 'mail.x.com', ttl: 1, priority: 10 },
+  ];
+  const back = parseBind(toBind(recs, 'x.com'));
+  assert.equal(back.length, 3);
+  assert.equal(back.find((r) => r.type === 'A').proxied, true);
+  assert.equal(back.find((r) => r.type === 'TXT').content, 'hello; with ; semicolons');
+  assert.equal(back.find((r) => r.type === 'MX').priority, 10);
 });
