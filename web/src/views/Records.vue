@@ -161,11 +161,22 @@ function openCreate() {
   dialogVisible.value = true;
 }
 
+// Show only the subdomain (relative) part in the form; the zone suffix is the
+// input's append hint, so the full name isn't displayed twice. The root record
+// shows as "@". The backend's toFqdn re-qualifies on save.
+function toRelativeName(fullName) {
+  const zone = currentZone.value?.name;
+  if (!zone || !fullName) return fullName || '';
+  if (fullName === zone) return '@';
+  const suffix = '.' + zone;
+  return fullName.endsWith(suffix) ? fullName.slice(0, -suffix.length) : fullName;
+}
+
 function openEdit(row) {
   editingId.value = row.id;
   resetForm({
     type: row.type,
-    name: row.name,
+    name: toRelativeName(row.name),
     content: row.content,
     ttl: row.ttl,
     proxied: !!row.proxied,
