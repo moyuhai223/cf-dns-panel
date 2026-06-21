@@ -713,8 +713,8 @@ async function doImport() {
   gap: 8px;
   margin-bottom: 10px;
   padding: 8px 12px;
-  background: #ecf5ff;
-  border: 1px solid #d9ecff;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-light);
   border-radius: 4px;
 }
 .table-footer {

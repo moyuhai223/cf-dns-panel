@@ -1,3 +1,27 @@
+:root {
+  /* Cloudflare-orange primary, with the shades Element Plus expects. */
+  --el-color-primary: #f38020;
+  --el-color-primary-light-3: #f7a663;
+  --el-color-primary-light-5: #f9c090;
+  --el-color-primary-light-7: #fbd9bc;
+  --el-color-primary-light-8: #fde6d2;
+  --el-color-primary-light-9: #fef2e9;
+  --el-color-primary-dark-2: #c2661a;
+  --sidebar-width: 208px;
+}
+
+/* Re-apply the orange primary in dark mode (Element Plus's dark vars would
+   otherwise reset it to the default blue), with dark-appropriate shades. */
+html.dark {
+  --el-color-primary: #f38020;
+  --el-color-primary-light-3: #b0601c;
+  --el-color-primary-light-5: #844a1a;
+  --el-color-primary-light-7: #573418;
+  --el-color-primary-light-8: #412a16;
+  --el-color-primary-light-9: #2a1f15;
+  --el-color-primary-dark-2: #f59c50;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -12,56 +36,105 @@ body,
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
     'PingFang SC', 'Microsoft YaHei', sans-serif;
-  background: #f5f7fa;
-  color: #303133;
+  background: var(--el-bg-color-page);
+  color: var(--el-text-color-primary);
 }
 
-/* Centered card used by the login / setup screens */
+/* ---- auth (login / setup) ---- */
 .auth-wrap {
   min-height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
+  background: radial-gradient(
+    1100px 560px at 50% -10%,
+    var(--el-color-primary-light-9),
+    var(--el-bg-color-page)
+  );
 }
-
 .auth-card {
   width: 380px;
   max-width: 100%;
+  box-shadow: var(--el-box-shadow-light);
 }
-
 .auth-card h1 {
   font-size: 20px;
   margin: 0 0 4px;
 }
-
 .auth-card .sub {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
   margin-bottom: 20px;
+}
+
+/* ---- app shell (sidebar layout) ---- */
+.app-aside {
+  background: var(--el-bg-color);
+  border-right: 1px solid var(--el-border-color-light);
+  display: flex;
+  flex-direction: column;
+  transition: width 0.2s ease;
+  overflow: hidden;
+}
+.app-brand {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px;
+  font-weight: 700;
+  font-size: 16px;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--el-border-color-light);
+}
+.app-brand .logo {
+  color: var(--el-color-primary);
+  font-size: 20px;
+}
+.app-aside .el-menu {
+  border-right: none;
+  flex: 1;
 }
 
 .app-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #fff;
-  border-bottom: 1px solid #ebeef5;
+  background: var(--el-bg-color);
+  border-bottom: 1px solid var(--el-border-color-light);
   padding: 0 16px;
 }
-
-.app-header .brand {
-  font-weight: 600;
-  font-size: 16px;
-  margin-right: 24px;
-  white-space: nowrap;
-}
-
 .app-header .left {
   display: flex;
   align-items: center;
+  gap: 12px;
+}
+.app-header .page-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+.app-header .right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.app-user {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.icon-btn {
+  cursor: pointer;
+  font-size: 18px;
+  color: var(--el-text-color-regular);
+}
+.icon-btn:hover {
+  color: var(--el-color-primary);
 }
 
+/* ---- shared ---- */
 .toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -69,17 +142,13 @@ body {
   align-items: center;
   margin-bottom: 14px;
 }
-
 .toolbar .spacer {
   flex: 1;
 }
-
 .muted {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
-
 .content {
   max-width: 1200px;
-  margin: 0 auto;
 }

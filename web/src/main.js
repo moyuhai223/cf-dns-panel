@@ -1,9 +1,11 @@
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import { Plus, ArrowDown, User } from '@element-plus/icons-vue';
+import 'element-plus/theme-chalk/dark/css-vars.css';
 
 import App from './App.vue';
 import router from './router';
+import './theme'; // applies the dark class before mount
 import './styles.css';
 
 const app = createApp(App);

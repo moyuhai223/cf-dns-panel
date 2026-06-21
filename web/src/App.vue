@@ -1,15 +1,53 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import zhCn from 'element-plus/es/locale/lang/zh-cn';
+import {
+  Document,
+  Search,
+  Key,
+  Refresh,
+  MagicStick,
+  Operation,
+  Tickets,
+  User,
+  ArrowDown,
+  Moon,
+  Sunny,
+  Fold,
+  Expand,
+} from '@element-plus/icons-vue';
 import { useAppStore } from './store/auth';
 import { api } from './api';
+import { isDark, toggleTheme } from './theme';
 
 const store = useAppStore();
 const route = useRoute();
 const router = useRouter();
 
 const activeMenu = computed(() => route.name);
+const isCollapse = ref(false);
+
+const NAV = [
+  { name: 'records', label: '记录管理', icon: Document },
+  { name: 'search', label: '全局搜索', icon: Search },
+  { name: 'accounts', label: '账号 / Token', icon: Key },
+  { name: 'ddns', label: 'DDNS', icon: Refresh },
+  { name: 'cache', label: '缓存', icon: MagicStick },
+  { name: 'rules', label: '规则', icon: Operation },
+  { name: 'audit', label: '审计日志', icon: Tickets },
+];
+const pageTitle = computed(() => NAV.find((n) => n.name === route.name)?.label || '');
+
+// Auto-collapse the sidebar to icons on narrow screens.
+function onResize() {
+  isCollapse.value = window.innerWidth < 768;
+}
+onMounted(() => {
+  onResize();
+  window.addEventListener('resize', onResize);
+});
+onUnmounted(() => window.removeEventListener('resize', onResize));
 
 async function onLogout() {
   await store.logout();
@@ -120,42 +158,60 @@ async function disable2fa() {
   <router-view v-if="!store.authenticated" />
 
   <el-container v-else style="height: 100%">
-    <el-header height="56px" class="app-header">
-      <div class="left">
-        <span class="brand">☁️ Cloudflare DNS</span>
-        <el-menu :default-active="activeMenu" mode="horizontal" router :ellipsis="false">
-          <el-menu-item index="records" :route="{ name: 'records' }">记录管理</el-menu-item>
-          <el-menu-item index="search" :route="{ name: 'search' }">全局搜索</el-menu-item>
-          <el-menu-item index="accounts" :route="{ name: 'accounts' }">账号 / Token</el-menu-item>
-          <el-menu-item index="ddns" :route="{ name: 'ddns' }">DDNS</el-menu-item>
-          <el-menu-item index="cache" :route="{ name: 'cache' }">缓存</el-menu-item>
-          <el-menu-item index="rules" :route="{ name: 'rules' }">规则</el-menu-item>
-          <el-menu-item index="audit" :route="{ name: 'audit' }">审计日志</el-menu-item>
-        </el-menu>
+    <el-aside :width="isCollapse ? '64px' : 'var(--sidebar-width)'" class="app-aside">
+      <div class="app-brand">
+        <span class="logo">☁</span>
+        <span v-show="!isCollapse">CF DNS 面板</span>
       </div>
-      <el-dropdown @command="onCommand">
-        <span style="cursor: pointer">
-          <el-icon><User /></el-icon>
-          {{ store.username }}
-          <el-icon><ArrowDown /></el-icon>
-        </span>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item command="password">修改密码</el-dropdown-item>
-            <el-dropdown-item command="2fa">
-              两步验证<span v-if="store.twoFactor" style="color: #67c23a"> ·已开启</span>
-            </el-dropdown-item>
-            <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
-    </el-header>
+      <el-menu :default-active="activeMenu" :collapse="isCollapse" router>
+        <el-menu-item v-for="n in NAV" :key="n.name" :index="n.name" :route="{ name: n.name }">
+          <el-icon><component :is="n.icon" /></el-icon>
+          <template #title>{{ n.label }}</template>
+        </el-menu-item>
+      </el-menu>
+    </el-aside>
 
-    <el-main>
-      <div class="content">
-        <router-view />
-      </div>
-    </el-main>
+    <el-container>
+      <el-header height="56px" class="app-header">
+        <div class="left">
+          <el-icon class="icon-btn" @click="isCollapse = !isCollapse">
+            <Fold v-if="!isCollapse" />
+            <Expand v-else />
+          </el-icon>
+          <span class="page-title">{{ pageTitle }}</span>
+        </div>
+        <div class="right">
+          <el-tooltip :content="isDark ? '切换到亮色' : '切换到暗色'" placement="bottom">
+            <el-icon class="icon-btn" @click="toggleTheme">
+              <Moon v-if="!isDark" />
+              <Sunny v-else />
+            </el-icon>
+          </el-tooltip>
+          <el-dropdown @command="onCommand">
+            <span class="app-user">
+              <el-icon><User /></el-icon>
+              {{ store.username }}
+              <el-icon><ArrowDown /></el-icon>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="password">修改密码</el-dropdown-item>
+                <el-dropdown-item command="2fa">
+                  两步验证<span v-if="store.twoFactor" style="color: var(--el-color-success)"> ·已开启</span>
+                </el-dropdown-item>
+                <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+      </el-header>
+
+      <el-main>
+        <div class="content">
+          <router-view />
+        </div>
+      </el-main>
+    </el-container>
   </el-container>
 
   <el-dialog v-model="pwVisible" title="修改密码" width="420px">
