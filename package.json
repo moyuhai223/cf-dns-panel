@@ -1,0 +1,24 @@
+{
+  "name": "cf-dns-panel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-hosted Cloudflare DNS management panel (designed to run on 127.0.0.1 behind a 1Panel reverse proxy)",
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "install:web": "npm --prefix web install",
+    "build:web": "npm --prefix web run build",
+    "build": "npm run install:web && npm run build:web"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/rate-limit": "^10.2.2",
+    "@fastify/static": "^8.0.4",
+    "better-sqlite3": "^11.8.1",
+    "fastify": "^5.2.1"
+  }
+}

@@ -1,0 +1,31 @@
+[Unit]
+Description=cf-dns-panel (Cloudflare DNS management panel)
+After=network.target
+
+[Service]
+Type=simple
+# 按实际部署路径修改
+WorkingDirectory=/opt/cf-dns-panel
+ExecStart=/usr/bin/node server/index.js
+Restart=on-failure
+RestartSec=3
+
+# 仅监听本机,交给 1Panel 反代
+Environment=HOST=127.0.0.1
+Environment=PORT=8787
+Environment=NODE_ENV=production
+Environment=COOKIE_SECURE=true
+# 强烈建议设置固定密钥(否则会落在 data/secret.key)
+# Environment=APP_SECRET=请替换为一段固定随机串
+
+# 以非 root 用户运行更安全(需先 useradd 并 chown 目录)
+# User=cfpanel
+# Group=cfpanel
+
+# 加固
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

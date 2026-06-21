@@ -1,0 +1,18 @@
+node_modules/
+web/node_modules/
+
+# 运行时数据(数据库、自动生成的密钥)
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# 前端构建产物(部署时由 npm run build 生成)
+public/
+
+# 环境变量
+.env
+
+# 杂项
+*.log
+.DS_Store

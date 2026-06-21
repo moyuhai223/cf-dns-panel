@@ -1,0 +1,17 @@
+# Normalize all text to LF on checkout — this project is deployed on Linux,
+# and a CRLF shell script / systemd unit would break there.
+* text=auto eol=lf
+
+*.sh      text eol=lf
+*.service text eol=lf
+*.json    text eol=lf
+*.js      text eol=lf
+*.vue     text eol=lf
+*.css     text eol=lf
+*.html    text eol=lf
+*.md      text eol=lf
+
+# Binary assets (none yet, but keep git from mangling them)
+*.png binary
+*.jpg binary
+*.ico binary
