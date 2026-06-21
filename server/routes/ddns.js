@@ -4,6 +4,7 @@ import { decrypt } from '../crypto.js';
 import { requireAuth, clientIp } from '../middleware/auth.js';
 import { patchRecord, CloudflareError } from '../cf/client.js';
 import { writeAudit } from '../services/audit.js';
+import { notifyChange } from '../services/notify.js';
 
 function accountToken(accountId) {
   const acct = db.prepare('SELECT * FROM accounts WHERE id = ?').get(accountId);
@@ -64,6 +65,7 @@ export default async function ddnsRoutes(fastify) {
         detail: { source: 'ddns', content: ip },
         clientIp: clientIp(request),
       });
+      notifyChange({ event: 'ddns', zone: cfg.zone_name, type: cfg.record_type, name: cfg.record_name, content: ip, user: 'ddns' });
       return reply.send(`good ${ip}`);
     },
   );

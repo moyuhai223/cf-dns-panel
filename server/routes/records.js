@@ -13,6 +13,7 @@ import {
 } from '../cf/client.js';
 import { sanitizeRecord, toFqdn, recordKey } from '../cf/records-util.js';
 import { writeAudit } from '../services/audit.js';
+import { notifyChange } from '../services/notify.js';
 
 const IMPORT_MAX = 1000; // hard cap on records accepted per import request
 const IMPORT_CONCURRENCY = 6; // parallel Cloudflare writes during an import
@@ -68,6 +69,7 @@ export default async function recordRoutes(fastify) {
         detail: { content: result.content, ttl: result.ttl, proxied: result.proxied },
         clientIp: clientIp(request),
       });
+      notifyChange({ event: 'create', zone: zoneName, type: result.type, name: result.name, content: result.content, user: request.user.username });
       return { record: result };
     } catch (e) {
       return onCfError(reply, e);
@@ -93,6 +95,7 @@ export default async function recordRoutes(fastify) {
         detail: { content: result.content, ttl: result.ttl, proxied: result.proxied },
         clientIp: clientIp(request),
       });
+      notifyChange({ event: 'update', zone: zoneName, type: result.type, name: result.name, content: result.content, user: request.user.username });
       return { record: result };
     } catch (e) {
       return onCfError(reply, e);
@@ -118,6 +121,7 @@ export default async function recordRoutes(fastify) {
         detail: { recordId },
         clientIp: clientIp(request),
       });
+      notifyChange({ event: 'delete', zone: zoneName, type: rrType, name: rrName, user: request.user.username });
       return { ok: true };
     } catch (e) {
       return onCfError(reply, e);
@@ -316,6 +320,14 @@ export default async function recordRoutes(fastify) {
     }
 
     result.errors.sort((a, b) => (a.line || 0) - (b.line || 0));
+    if (result.created || result.updated || result.deleted) {
+      notifyChange({
+        event: 'batch',
+        zone: zoneName,
+        summary: `导入:新增 ${result.created}、覆盖 ${result.updated}、删除 ${result.deleted}、失败 ${result.failed}`,
+        user: request.user.username,
+      });
+    }
     return result;
   });
 
@@ -350,6 +362,9 @@ export default async function recordRoutes(fastify) {
       }
     }
     await Promise.all(Array.from({ length: Math.min(IMPORT_CONCURRENCY, ids.length) }, worker));
+    if (result.deleted) {
+      notifyChange({ event: 'batch', zone: zoneName, summary: `批量删除 ${result.deleted} 条记录`, user: request.user.username });
+    }
     return result;
   });
 
@@ -414,6 +429,9 @@ export default async function recordRoutes(fastify) {
       }
     }
     await Promise.all(Array.from({ length: Math.min(IMPORT_CONCURRENCY, ids.length) }, worker));
+    if (result.updated) {
+      notifyChange({ event: 'batch', zone: zoneName, summary: `批量修改 ${result.updated} 条记录`, user: request.user.username });
+    }
     return result;
   });
 }

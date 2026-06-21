@@ -87,6 +87,65 @@ function onCommand(c) {
   if (c === 'logout') onLogout();
   else if (c === 'password') openPw();
   else if (c === '2fa') open2fa();
+  else if (c === 'notify') openNotify();
+}
+
+// notification settings dialog
+const notifyVisible = ref(false);
+const notifyBusy = ref(false);
+const notifyForm = ref({
+  enabled: false,
+  webhookUrl: '',
+  telegramToken: '',
+  telegramChat: '',
+  telegramTokenSet: false,
+  events: { create: true, update: true, delete: true, batch: true, ddns: false },
+});
+
+async function openNotify() {
+  notifyVisible.value = true;
+  try {
+    const r = await api.get('api/settings/notifications');
+    notifyForm.value = { telegramToken: '', ...r.config };
+  } catch (e) {
+    ElMessage.error(e.message);
+  }
+}
+async function saveNotify(close = true) {
+  notifyBusy.value = true;
+  try {
+    await api.put('api/settings/notifications', notifyForm.value);
+    notifyForm.value.telegramTokenSet = notifyForm.value.telegramTokenSet || !!notifyForm.value.telegramToken;
+    notifyForm.value.telegramToken = '';
+    if (close) {
+      ElMessage.success('已保存');
+      notifyVisible.value = false;
+    }
+  } catch (e) {
+    ElMessage.error(e.message);
+    throw e;
+  } finally {
+    notifyBusy.value = false;
+  }
+}
+async function testNotify() {
+  try {
+    await saveNotify(false); // persist current form first, then test it
+  } catch {
+    return;
+  }
+  notifyBusy.value = true;
+  try {
+    const r = await api.post('api/settings/notifications/test');
+    const results = r.results || [];
+    if (results.length && results.every((x) => x.ok)) ElMessage.success('测试已发送');
+    else if (results.some((x) => x.ok)) ElMessage.warning('部分发送成功,请检查另一个渠道');
+    else ElMessage.error('发送失败,请检查配置');
+  } catch (e) {
+    ElMessage.error(e.message);
+  } finally {
+    notifyBusy.value = false;
+  }
 }
 
 // two-factor dialog
@@ -200,6 +259,7 @@ async function disable2fa() {
                 <el-dropdown-item command="2fa">
                   两步验证<span v-if="store.twoFactor" style="color: var(--el-color-success)"> ·已开启</span>
                 </el-dropdown-item>
+                <el-dropdown-item command="notify">通知设置</el-dropdown-item>
                 <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -277,6 +337,40 @@ async function disable2fa() {
         启用
       </el-button>
       <el-button v-else type="primary" :loading="twofaBusy" @click="start2fa">开始设置</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="notifyVisible" title="变更通知" width="520px">
+    <el-form label-width="118px">
+      <el-form-item label="启用通知">
+        <el-switch v-model="notifyForm.enabled" />
+      </el-form-item>
+      <el-form-item label="Webhook URL">
+        <el-input v-model="notifyForm.webhookUrl" placeholder="变更时 POST JSON 到此地址(可留空)" />
+      </el-form-item>
+      <el-form-item label="Telegram Token">
+        <el-input
+          v-model="notifyForm.telegramToken"
+          type="password"
+          show-password
+          :placeholder="notifyForm.telegramTokenSet ? '已设置,留空保持不变' : 'Bot Token(可留空)'"
+        />
+      </el-form-item>
+      <el-form-item label="Telegram Chat">
+        <el-input v-model="notifyForm.telegramChat" placeholder="chat_id(配合上面的 Token)" />
+      </el-form-item>
+      <el-form-item label="通知事件">
+        <el-checkbox v-model="notifyForm.events.create">新增</el-checkbox>
+        <el-checkbox v-model="notifyForm.events.update">修改</el-checkbox>
+        <el-checkbox v-model="notifyForm.events.delete">删除</el-checkbox>
+        <el-checkbox v-model="notifyForm.events.batch">批量/导入</el-checkbox>
+        <el-checkbox v-model="notifyForm.events.ddns">DDNS</el-checkbox>
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="notifyVisible = false">取消</el-button>
+      <el-button :loading="notifyBusy" @click="testNotify">保存并测试</el-button>
+      <el-button type="primary" :loading="notifyBusy" @click="saveNotify">保存</el-button>
     </template>
   </el-dialog>
   </el-config-provider>
