@@ -52,9 +52,17 @@ async function cfFetch(token, method, pathname, { query, body } = {}) {
   return data;
 }
 
-/** GET /user/tokens/verify -> { id, status } */
+/**
+ * Validate a token by exercising the capability the panel needs — reading zones.
+ *
+ * This works for BOTH user-owned tokens and ACCOUNT-owned tokens (the `cfat_`
+ * prefix). The older `/user/tokens/verify` endpoint only accepts user-owned
+ * tokens and rejects account-owned ones with code 1000, so we avoid it and use
+ * `/zones` instead (which both token types can call given Zone:Read).
+ * Returns the (possibly empty) first page of zones.
+ */
 export async function verifyToken(token) {
-  const data = await cfFetch(token, 'GET', '/user/tokens/verify');
+  const data = await cfFetch(token, 'GET', '/zones', { query: { per_page: 1 } });
   return data.result;
 }
 

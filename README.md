@@ -68,6 +68,8 @@ Cloudflare 控制台 → 个人资料 → **API 令牌** → 创建令牌(可用
 
 作用范围可选「所有区域」或指定区域。Token 创建后只显示一次,复制到面板里录入即可。
 
+> 同时支持**用户 API 令牌**和**账户 API 令牌**(`cfat_` 前缀)。校验走 `GET /zones`(而非仅限用户令牌的 `/user/tokens/verify`,后者会把账户令牌误判为 `1000 Invalid API Token`)。
+
 ## 本地运行(开发)
 
 ```bash
