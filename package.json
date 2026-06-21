@@ -12,7 +12,8 @@
     "dev": "node --watch server/index.js",
     "install:web": "npm --prefix web install",
     "build:web": "npm --prefix web run build",
-    "build": "npm run install:web && npm run build:web"
+    "build": "npm run install:web && npm run build:web",
+    "test": "node --test tests/io.test.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

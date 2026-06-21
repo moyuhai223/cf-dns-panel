@@ -3,6 +3,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useAppStore } from '../store/auth';
 import { api } from '../api';
+import { toCsv, simplify, parseImport } from '../dnsio';
 
 const store = useAppStore();
 
@@ -203,6 +204,110 @@ async function remove(row) {
     ElMessage.error(e.message);
   }
 }
+
+/* ---- export ---- */
+async function exportRecords(format) {
+  if (!zoneId.value) return ElMessage.warning('请先选择域名');
+  try {
+    const r = await api.get(`api/zones/${zoneId.value}/export`, { accountId: accountId.value });
+    const recs = (r.records || []).map(simplify);
+    const zone = currentZone.value?.name || 'zone';
+    if (format === 'json') {
+      downloadFile(`${zone}-dns.json`, JSON.stringify(recs, null, 2), 'application/json');
+    } else {
+      downloadFile(`${zone}-dns.csv`, toCsv(recs), 'text/csv;charset=utf-8');
+    }
+    ElMessage.success(`已导出 ${recs.length} 条记录`);
+  } catch (e) {
+    ElMessage.error(e.message);
+  }
+}
+
+function downloadFile(filename, content, mime) {
+  const prefix = mime.startsWith('text/csv') ? '﻿' : ''; // BOM so Excel reads UTF-8
+  const blob = new Blob([prefix + content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/* ---- import ---- */
+const importVisible = ref(false);
+const importText = ref('');
+const importRecords = ref([]);
+const importParseError = ref('');
+const importing = ref(false);
+const importResult = ref(null);
+const fileInput = ref(null);
+
+function openImport() {
+  if (!zoneId.value) return ElMessage.warning('请先选择域名');
+  importText.value = '';
+  importRecords.value = [];
+  importParseError.value = '';
+  importResult.value = null;
+  importVisible.value = true;
+}
+
+function onImportTextChange() {
+  importResult.value = null;
+  try {
+    importRecords.value = parseImport(importText.value);
+    importParseError.value = '';
+  } catch (e) {
+    importRecords.value = [];
+    importParseError.value = e.message || '解析失败';
+  }
+}
+
+function pickFile() {
+  fileInput.value?.click();
+}
+
+function onFile(ev) {
+  const file = ev.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    importText.value = String(reader.result || '');
+    onImportTextChange();
+  };
+  reader.readAsText(file);
+  ev.target.value = '';
+}
+
+async function doImport() {
+  if (!importRecords.value.length) return;
+  try {
+    await ElMessageBox.confirm(
+      `将导入 ${importRecords.value.length} 条记录到 ${currentZone.value?.name}。同名同类型的现有记录会被覆盖更新,确定继续?`,
+      '确认导入',
+      { type: 'warning', confirmButtonText: '导入', cancelButtonText: '取消' },
+    );
+  } catch {
+    return;
+  }
+  importing.value = true;
+  try {
+    const res = await api.post(`api/zones/${zoneId.value}/import`, {
+      accountId: accountId.value,
+      zoneName: currentZone.value?.name,
+      records: importRecords.value,
+    });
+    importResult.value = res;
+    ElMessage.success(`导入完成:新增 ${res.created}、覆盖 ${res.updated}、失败 ${res.failed}`);
+    await loadRecords();
+  } catch (e) {
+    ElMessage.error(e.message);
+  } finally {
+    importing.value = false;
+  }
+}
 </script>
 
 <template>
@@ -248,6 +353,18 @@ async function remove(row) {
     <el-button :loading="loadingRecords" @click="loadRecords">刷新</el-button>
 
     <div class="spacer"></div>
+    <el-dropdown :disabled="!zoneId" @command="exportRecords">
+      <el-button :disabled="!zoneId">
+        导出<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+      </el-button>
+      <template #dropdown>
+        <el-dropdown-menu>
+          <el-dropdown-item command="csv">导出 CSV</el-dropdown-item>
+          <el-dropdown-item command="json">导出 JSON</el-dropdown-item>
+        </el-dropdown-menu>
+      </template>
+    </el-dropdown>
+    <el-button :disabled="!zoneId" @click="openImport">导入</el-button>
     <el-button type="primary" :disabled="!zoneId" @click="openCreate">
       <el-icon style="margin-right: 4px"><Plus /></el-icon>新增记录
     </el-button>
@@ -339,6 +456,66 @@ async function remove(row) {
     <template #footer>
       <el-button @click="dialogVisible = false">取消</el-button>
       <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="importVisible" title="导入 DNS 记录" width="640px">
+    <el-alert type="warning" :closable="false" show-icon style="margin-bottom: 12px">
+      <template #default>
+        导入规则:<b>同名同类型</b>(二级域名 + 记录类型)的记录会被<b>覆盖更新</b>,不存在的会<b>新增</b>;
+        文件里没有列出的现有记录<b>不会被删除</b>。支持 CSV 或 JSON(可先点「导出」拿到模板);
+        SRV / CAA 等结构化记录请用 <b>JSON</b> 导入,CSV 无法完整表达。单次最多 1000 条。
+      </template>
+    </el-alert>
+
+    <div style="margin-bottom: 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap">
+      <el-button @click="pickFile">选择文件(CSV / JSON)</el-button>
+      <input
+        ref="fileInput"
+        type="file"
+        accept=".csv,.json,.txt"
+        style="display: none"
+        @change="onFile"
+      />
+      <span v-if="importRecords.length" class="muted">已解析 {{ importRecords.length }} 条</span>
+      <span v-if="importParseError" style="color: #f56c6c">解析错误:{{ importParseError }}</span>
+    </div>
+
+    <el-input
+      v-model="importText"
+      type="textarea"
+      :rows="9"
+      placeholder="在此粘贴 CSV 或 JSON,或点上方按钮选择文件。CSV 表头:type,name,content,ttl,proxied,priority"
+      @input="onImportTextChange"
+    />
+
+    <div v-if="importResult" style="margin-top: 12px">
+      <el-tag type="success">新增 {{ importResult.created }}</el-tag>
+      <el-tag type="warning" style="margin-left: 6px">覆盖 {{ importResult.updated }}</el-tag>
+      <el-tag :type="importResult.failed ? 'danger' : 'info'" style="margin-left: 6px">
+        失败 {{ importResult.failed }}
+      </el-tag>
+      <ul
+        v-if="importResult.errors && importResult.errors.length"
+        class="muted"
+        style="max-height: 130px; overflow: auto; margin: 8px 0 0; padding-left: 18px"
+      >
+        <li v-for="(e, i) in importResult.errors" :key="i">
+          第 {{ e.line }} 行 {{ e.type }} {{ e.name }}:{{ e.message }}
+        </li>
+      </ul>
+    </div>
+
+    <template #footer>
+      <el-button @click="importVisible = false">关闭</el-button>
+      <el-button
+        type="primary"
+        :loading="importing"
+        :disabled="!importRecords.length"
+        @click="doImport"
+      >
+        导入{{ importRecords.length ? ` ${importRecords.length} 条` : '' }}
+      </el-button>
     </template>
   </el-dialog>
 </template>

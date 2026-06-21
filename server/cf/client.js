@@ -86,6 +86,22 @@ export async function listRecords(token, zoneId, { type, name, page = 1, perPage
   });
 }
 
+/** Fetch every DNS record in a zone (handles pagination). Used by export/import. */
+export async function listAllRecords(token, zoneId) {
+  const all = [];
+  let page = 1;
+  for (;;) {
+    const data = await cfFetch(token, 'GET', `/zones/${zoneId}/dns_records`, {
+      query: { per_page: 100, page, order: 'type', direction: 'asc' },
+    });
+    all.push(...data.result);
+    const info = data.result_info;
+    if (!info || page >= info.total_pages || data.result.length === 0) break;
+    page += 1;
+  }
+  return all;
+}
+
 export async function createRecord(token, zoneId, record) {
   const data = await cfFetch(token, 'POST', `/zones/${zoneId}/dns_records`, { body: record });
   return data.result;
