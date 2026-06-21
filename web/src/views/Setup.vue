@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAppStore } from '../store/auth';
+import AuthShell from '../components/AuthShell.vue';
 
 const store = useAppStore();
 const router = useRouter();
@@ -25,11 +26,10 @@ async function submit() {
 </script>
 
 <template>
-  <div class="auth-wrap">
-    <el-card class="auth-card">
-      <h1>初始化管理员</h1>
-      <div class="sub">首次使用,请设置管理员账号</div>
-      <el-form label-position="top" @submit.prevent="submit">
+  <AuthShell>
+    <h1>初始化管理员</h1>
+    <div class="sub">首次使用,请设置管理员账号</div>
+    <el-form label-position="top" @submit.prevent="submit">
         <el-form-item label="用户名">
           <el-input v-model="form.username" autocomplete="username" />
         </el-form-item>
@@ -43,6 +43,5 @@ async function submit() {
           创建并登录
         </el-button>
       </el-form>
-    </el-card>
-  </div>
+  </AuthShell>
 </template>

@@ -41,7 +41,7 @@ body {
 }
 
 /* ---- auth (login / setup) ---- */
-.auth-wrap {
+.auth-shell {
   min-height: 100%;
   display: flex;
   align-items: center;
@@ -53,19 +53,80 @@ body {
     var(--el-bg-color-page)
   );
 }
-.auth-card {
-  width: 380px;
+.auth-card2 {
+  display: flex;
+  width: 760px;
   max-width: 100%;
-  box-shadow: var(--el-box-shadow-light);
+  min-height: 460px;
+  background: var(--el-bg-color);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 24px 70px -24px rgba(0, 0, 0, 0.3);
 }
-.auth-card h1 {
+.auth-brand {
+  width: 320px;
+  padding: 44px 34px;
+  background: linear-gradient(155deg, #f8a857 0%, #f38020 55%, #df6f17 100%);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 16px;
+}
+.auth-brand .cloud {
+  width: 72px;
+  height: 72px;
+  color: #fff;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.18));
+}
+.auth-brand-title {
+  font-size: 22px;
+  font-weight: 700;
+}
+.auth-brand-sub {
+  font-size: 13px;
+  line-height: 1.8;
+  opacity: 0.92;
+}
+.auth-pane {
+  flex: 1;
+  padding: 44px 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.auth-pane h1 {
   font-size: 20px;
   margin: 0 0 4px;
 }
-.auth-card .sub {
+.auth-pane .sub {
   color: var(--el-text-color-secondary);
   font-size: 13px;
-  margin-bottom: 20px;
+  margin-bottom: 22px;
+}
+@media (max-width: 720px) {
+  .auth-card2 {
+    flex-direction: column;
+    width: 400px;
+    min-height: 0;
+  }
+  .auth-brand {
+    width: auto;
+    padding: 26px 28px 22px;
+    flex-direction: row;
+    align-items: center;
+    gap: 14px;
+  }
+  .auth-brand .cloud {
+    width: 44px;
+    height: 44px;
+  }
+  .auth-brand-sub {
+    display: none;
+  }
+  .auth-pane {
+    padding: 28px 28px 34px;
+  }
 }
 
 /* ---- app shell (sidebar layout) ---- */

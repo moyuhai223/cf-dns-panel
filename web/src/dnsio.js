@@ -13,6 +13,7 @@ export function simplify(r) {
     priority: r.priority,
   };
   if (r.data && typeof r.data === 'object') out.data = r.data; // SRV/CAA/… (JSON only)
+  if (Array.isArray(r.tags) && r.tags.length) out.tags = r.tags; // JSON only
   return out;
 }
 
@@ -106,6 +107,7 @@ export function normalizeRecord(r) {
     priority: r.priority === '' || r.priority == null || !Number.isFinite(pri) ? undefined : pri,
   };
   if (r.data && typeof r.data === 'object') out.data = r.data; // preserve structured (JSON)
+  if (Array.isArray(r.tags)) out.tags = r.tags; // preserve tags (JSON)
   return out;
 }
 

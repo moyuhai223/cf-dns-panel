@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAppStore } from '../store/auth';
+import AuthShell from '../components/AuthShell.vue';
 
 const store = useAppStore();
 const router = useRouter();
@@ -29,11 +30,10 @@ async function submit() {
 </script>
 
 <template>
-  <div class="auth-wrap">
-    <el-card class="auth-card">
-      <h1>☁️ Cloudflare DNS 面板</h1>
-      <div class="sub">请登录</div>
-      <el-form label-position="top" @submit.prevent="submit">
+  <AuthShell>
+    <h1>欢迎登录</h1>
+    <div class="sub">输入管理员账号与密码</div>
+    <el-form label-position="top" @submit.prevent="submit">
         <el-form-item label="用户名">
           <el-input v-model="form.username" autocomplete="username" @keyup.enter="submit" />
         </el-form-item>
@@ -57,6 +57,5 @@ async function submit() {
         </el-form-item>
         <el-button type="primary" :loading="loading" style="width: 100%" @click="submit">登录</el-button>
       </el-form>
-    </el-card>
-  </div>
+  </AuthShell>
 </template>

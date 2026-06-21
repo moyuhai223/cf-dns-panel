@@ -50,7 +50,8 @@ const filteredRecords = computed(() => {
       (r) =>
         (r.name || '').toLowerCase().includes(q) ||
         (r.content || '').toLowerCase().includes(q) ||
-        (r.comment || '').toLowerCase().includes(q),
+        (r.comment || '').toLowerCase().includes(q) ||
+        (r.tags || []).join(' ').toLowerCase().includes(q),
     );
   }
   return list;
@@ -149,6 +150,7 @@ const form = reactive({
   proxied: false,
   priority: 10,
   comment: '',
+  tags: [],
 });
 const saving = ref(false);
 
@@ -158,7 +160,7 @@ const hasPriority = computed(() => PRIORITY_TYPES.includes(form.type));
 function resetForm(values) {
   Object.assign(
     form,
-    { type: 'A', name: '', content: '', ttl: 1, proxied: false, priority: 10, comment: '' },
+    { type: 'A', name: '', content: '', ttl: 1, proxied: false, priority: 10, comment: '', tags: [] },
     values,
   );
 }
@@ -191,6 +193,7 @@ function openEdit(row) {
     proxied: !!row.proxied,
     priority: row.priority ?? 10,
     comment: row.comment || '',
+    tags: Array.isArray(row.tags) ? [...row.tags] : [],
   });
   dialogVisible.value = true;
 }
@@ -205,6 +208,7 @@ async function save() {
     proxied: isProxyable.value ? form.proxied : undefined,
     priority: hasPriority.value ? Number(form.priority) : undefined,
     comment: form.comment || undefined,
+    tags: form.tags && form.tags.length ? [...form.tags] : undefined,
   };
   const payload = { accountId: accountId.value, zoneName: currentZone.value?.name, record };
   saving.value = true;
@@ -547,6 +551,19 @@ async function doImport() {
       <el-table-column label="优先级" width="72">
         <template #default="{ row }">{{ row.priority ?? '—' }}</template>
       </el-table-column>
+      <el-table-column label="标签" min-width="120">
+        <template #default="{ row }">
+          <el-tag
+            v-for="t in row.tags || []"
+            :key="t"
+            size="small"
+            type="info"
+            style="margin-right: 4px"
+            >{{ t }}</el-tag
+          >
+          <span v-if="!row.tags || !row.tags.length" class="muted">—</span>
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="130" fixed="right">
         <template #default="{ row }">
           <el-button type="primary" link @click="openEdit(row)">编辑</el-button>
@@ -609,6 +626,20 @@ async function doImport() {
       </el-form-item>
       <el-form-item label="备注">
         <el-input v-model="form.comment" placeholder="可选" />
+      </el-form-item>
+      <el-form-item label="标签">
+        <el-select
+          v-model="form.tags"
+          multiple
+          filterable
+          allow-create
+          default-first-option
+          :reserve-keyword="false"
+          placeholder="可选,输入后回车添加,如 env:prod"
+          style="width: 100%"
+        >
+          <el-option v-for="t in form.tags" :key="t" :label="t" :value="t" />
+        </el-select>
       </el-form-item>
     </el-form>
     <template #footer>

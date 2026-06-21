@@ -20,6 +20,7 @@ import {
 import { useAppStore } from './store/auth';
 import { api } from './api';
 import { isDark, toggleTheme } from './theme';
+import CloudLogo from './components/CloudLogo.vue';
 
 const store = useAppStore();
 const route = useRoute();
@@ -160,7 +161,7 @@ async function disable2fa() {
   <el-container v-else style="height: 100%">
     <el-aside :width="isCollapse ? '64px' : 'var(--sidebar-width)'" class="app-aside">
       <div class="app-brand">
-        <span class="logo">☁</span>
+        <CloudLogo class="logo" :size="24" />
         <span v-show="!isCollapse">CF DNS 面板</span>
       </div>
       <el-menu :default-active="activeMenu" :collapse="isCollapse" router>
