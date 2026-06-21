@@ -457,6 +457,88 @@ async function doImport() {
     importing.value = false;
   }
 }
+
+/* ---- snapshots / rollback ---- */
+const snapVisible = ref(false);
+const snapshots = ref([]);
+const snapLabel = ref('');
+const snapBusy = ref(false);
+
+async function openSnapshots() {
+  if (!zoneId.value) return ElMessage.warning('请先选择域名');
+  snapLabel.value = '';
+  snapVisible.value = true;
+  await loadSnapshots();
+}
+async function loadSnapshots() {
+  try {
+    const r = await api.get('api/snapshots', { zoneId: zoneId.value });
+    snapshots.value = r.snapshots || [];
+  } catch (e) {
+    ElMessage.error(e.message);
+  }
+}
+async function createSnapshot() {
+  snapBusy.value = true;
+  try {
+    const r = await api.post('api/snapshots', {
+      accountId: accountId.value,
+      zoneId: zoneId.value,
+      zoneName: currentZone.value?.name,
+      label: snapLabel.value,
+    });
+    ElMessage.success(`已创建快照(${r.count} 条记录)`);
+    snapLabel.value = '';
+    await loadSnapshots();
+  } catch (e) {
+    ElMessage.error(e.message);
+  } finally {
+    snapBusy.value = false;
+  }
+}
+async function deleteSnapshot(row) {
+  try {
+    await ElMessageBox.confirm('删除该快照?', '确认', { type: 'warning' });
+  } catch {
+    return;
+  }
+  try {
+    await api.del(`api/snapshots/${row.id}`);
+    await loadSnapshots();
+  } catch (e) {
+    ElMessage.error(e.message);
+  }
+}
+async function restoreSnapshot(row) {
+  let plan;
+  try {
+    plan = await api.post(`api/snapshots/${row.id}/restore`, { accountId: accountId.value, dryRun: true });
+  } catch (e) {
+    return ElMessage.error(e.message);
+  }
+  try {
+    await ElMessageBox.confirm(
+      `回滚到该快照将:新增 ${plan.willCreate}、覆盖 ${plan.willUpdate}、删除 ${plan.willDelete} 条(SOA/NS 不动)。确定?`,
+      '确认回滚',
+      { type: 'warning', confirmButtonText: '回滚', cancelButtonText: '取消' },
+    );
+  } catch {
+    return;
+  }
+  snapBusy.value = true;
+  try {
+    const res = await api.post(`api/snapshots/${row.id}/restore`, { accountId: accountId.value });
+    ElMessage.success(
+      `回滚完成:新增 ${res.created}、覆盖 ${res.updated}、删除 ${res.deleted}、失败 ${res.failed}`,
+    );
+    snapVisible.value = false;
+    await loadAllRecords();
+  } catch (e) {
+    ElMessage.error(e.message);
+  } finally {
+    snapBusy.value = false;
+  }
+}
 </script>
 
 <template>
@@ -492,6 +574,7 @@ async function doImport() {
       style="width: 240px"
     />
     <el-button :loading="loadingRecords" @click="loadAllRecords">刷新</el-button>
+    <el-button :disabled="!zoneId" @click="openSnapshots">快照</el-button>
 
     <div class="spacer"></div>
     <el-dropdown :disabled="!zoneId" @command="exportRecords">
@@ -734,6 +817,32 @@ async function doImport() {
         导入{{ importRecords.length ? ` ${importRecords.length} 条` : '' }}
       </el-button>
     </template>
+  </el-dialog>
+
+  <el-dialog v-model="snapVisible" title="区域快照 / 回滚" width="640px">
+    <div style="display: flex; gap: 8px; margin-bottom: 12px">
+      <el-input v-model="snapLabel" placeholder="快照备注(可选)" maxlength="80" style="flex: 1" />
+      <el-button type="primary" :loading="snapBusy" @click="createSnapshot">创建当前快照</el-button>
+    </div>
+    <el-alert type="info" :closable="false" style="margin-bottom: 12px">
+      快照保存该域名<b>当前全部记录</b>;回滚会让记录与快照一致(新增缺失、覆盖不同、<b>删除多余</b>),不动
+      SOA/NS。回滚前会先预览。每个域名最多保留 30 个快照。
+    </el-alert>
+    <el-table :data="snapshots" border style="width: 100%">
+      <el-table-column prop="created_at" label="时间" width="180" />
+      <el-table-column label="备注" min-width="160" show-overflow-tooltip>
+        <template #default="{ row }">{{ row.label || '—' }}</template>
+      </el-table-column>
+      <el-table-column prop="record_count" label="记录数" width="90" />
+      <el-table-column label="操作" width="140" fixed="right">
+        <template #default="{ row }">
+          <el-button type="primary" link :loading="snapBusy" @click="restoreSnapshot(row)">回滚</el-button>
+          <el-button type="danger" link @click="deleteSnapshot(row)">删除</el-button>
+        </template>
+      </el-table-column>
+      <template #empty>暂无快照</template>
+    </el-table>
+    <template #footer><el-button @click="snapVisible = false">关闭</el-button></template>
   </el-dialog>
 </template>
 

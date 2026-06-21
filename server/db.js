@@ -64,6 +64,17 @@ CREATE TABLE IF NOT EXISTS ddns (
   updated_at  TEXT,
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS snapshots (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id   INTEGER,
+  zone_id      TEXT NOT NULL,
+  zone_name    TEXT,
+  label        TEXT,
+  record_count INTEGER,
+  records_json TEXT NOT NULL,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `);
 
 // Lightweight migrations: add columns to existing installs without data loss.
