@@ -125,6 +125,7 @@ async function disable2fa() {
         <span class="brand">☁️ Cloudflare DNS</span>
         <el-menu :default-active="activeMenu" mode="horizontal" router :ellipsis="false">
           <el-menu-item index="records" :route="{ name: 'records' }">记录管理</el-menu-item>
+          <el-menu-item index="search" :route="{ name: 'search' }">全局搜索</el-menu-item>
           <el-menu-item index="accounts" :route="{ name: 'accounts' }">账号 / Token</el-menu-item>
           <el-menu-item index="ddns" :route="{ name: 'ddns' }">DDNS</el-menu-item>
           <el-menu-item index="cache" :route="{ name: 'cache' }">缓存</el-menu-item>

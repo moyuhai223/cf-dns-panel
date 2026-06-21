@@ -1,8 +1,11 @@
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { useAppStore } from '../store/auth';
 import { api } from '../api';
 import { toCsv, toBind, simplify, parseImport } from '../dnsio';
+
+const route = useRoute();
 
 const store = useAppStore();
 
@@ -74,9 +77,15 @@ watch([filterType, searchText], () => {
 onMounted(async () => {
   try {
     await store.loadAccounts();
-    if (store.accounts.length >= 1) {
-      accountId.value = store.accounts[0].id;
-      await loadZones();
+    if (!store.accounts.length) return;
+    // Preselect account/zone when arriving from global search (?accountId=&zoneId=).
+    const qAccount = Number(route.query.accountId);
+    accountId.value = store.accounts.some((a) => a.id === qAccount) ? qAccount : store.accounts[0].id;
+    await loadZones();
+    const qZone = route.query.zoneId;
+    if (qZone && zoneId.value !== qZone && zones.value.some((z) => z.id === qZone)) {
+      zoneId.value = qZone;
+      await loadAllRecords();
     }
   } catch (e) {
     ElMessage.error(e.message);

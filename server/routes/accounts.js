@@ -1,7 +1,11 @@
 import { db } from '../db.js';
 import { encrypt, decrypt } from '../crypto.js';
 import { requireAuth } from '../middleware/auth.js';
-import { verifyToken, listZones, CloudflareError } from '../cf/client.js';
+import { verifyToken, listZones, listAllRecords, CloudflareError } from '../cf/client.js';
+
+const SEARCH_MAX_ZONES = 200; // bound the fan-out
+const SEARCH_MAX_RESULTS = 500;
+const SEARCH_CONCURRENCY = 8;
 
 export default async function accountRoutes(fastify) {
   fastify.addHook('preHandler', requireAuth);
@@ -62,5 +66,74 @@ export default async function accountRoutes(fastify) {
       }
       throw e;
     }
+  });
+
+  // GET /:id/search?q=&type=  — search records across ALL zones of this account.
+  // Cloudflare has no cross-zone DNS search, so we list every zone's records and
+  // filter server-side (bounded fan-out). Returns matches tagged with their zone.
+  fastify.get('/:id/search', async (request, reply) => {
+    const acct = db.prepare('SELECT * FROM accounts WHERE id = ?').get(request.params.id);
+    if (!acct) return reply.code(404).send({ error: 'not_found', message: '账号不存在' });
+    const q = String(request.query.q || '').trim().toLowerCase();
+    const type = request.query.type ? String(request.query.type).toUpperCase() : '';
+    if (!q && !type) {
+      return reply.code(400).send({ error: 'invalid_input', message: '请输入搜索词或选择类型' });
+    }
+
+    const token = decrypt(acct.token_encrypted);
+    let zones;
+    try {
+      zones = await listZones(token);
+    } catch (e) {
+      if (e instanceof CloudflareError) {
+        return reply.code(502).send({ error: 'cf_error', message: e.message, errors: e.errors });
+      }
+      throw e;
+    }
+
+    const targets = zones.slice(0, SEARCH_MAX_ZONES);
+    const results = [];
+    const errors = [];
+    let truncated = zones.length > SEARCH_MAX_ZONES;
+    let cursor = 0;
+
+    async function worker() {
+      while (cursor < targets.length && results.length < SEARCH_MAX_RESULTS) {
+        const z = targets[cursor++];
+        try {
+          const recs = await listAllRecords(token, z.id);
+          for (const r of recs) {
+            if (results.length >= SEARCH_MAX_RESULTS) {
+              truncated = true;
+              break;
+            }
+            if (type && r.type !== type) continue;
+            if (q) {
+              const hay = `${r.name}\n${r.content}\n${r.comment || ''}`.toLowerCase();
+              if (!hay.includes(q)) continue;
+            }
+            results.push({
+              zoneId: z.id,
+              zoneName: z.name,
+              record: {
+                id: r.id,
+                type: r.type,
+                name: r.name,
+                content: r.content,
+                ttl: r.ttl,
+                proxied: r.proxied,
+                priority: r.priority,
+                comment: r.comment,
+              },
+            });
+          }
+        } catch (e) {
+          errors.push({ zone: z.name, message: e instanceof CloudflareError ? e.message : String((e && e.message) || e) });
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(SEARCH_CONCURRENCY, targets.length) }, worker));
+
+    return { results, zonesSearched: targets.length, totalZones: zones.length, truncated, errors };
   });
 }

@@ -5,6 +5,7 @@ const routes = [
   { path: '/setup', name: 'setup', component: () => import('./views/Setup.vue') },
   { path: '/login', name: 'login', component: () => import('./views/Login.vue') },
   { path: '/', name: 'records', component: () => import('./views/Records.vue') },
+  { path: '/search', name: 'search', component: () => import('./views/Search.vue') },
   { path: '/accounts', name: 'accounts', component: () => import('./views/Accounts.vue') },
   { path: '/ddns', name: 'ddns', component: () => import('./views/Ddns.vue') },
   { path: '/cache', name: 'cache', component: () => import('./views/Cache.vue') },
