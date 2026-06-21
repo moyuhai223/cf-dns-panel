@@ -36,6 +36,133 @@ const TTL_OPTS = [
   { label: '1 个月', value: 2592000 },
 ];
 
+// One-click presets per phase. build(zoneName) returns a CF rule object.
+const STATIC_EXTS = ['css', 'js', 'mjs', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'svg', 'ico', 'woff', 'woff2', 'ttf', 'otf', 'eot', 'mp4', 'webm', 'pdf'];
+const staticExpr = `(${STATIC_EXTS.map((e) => `ends_with(lower(http.request.uri.path), ".${e}")`).join(' or ')})`;
+const ALL_PATHS = '(starts_with(http.request.uri.path, "/"))';
+
+const TEMPLATES = {
+  cache: [
+    {
+      label: '缓存静态资源(JS/CSS/图片/字体,边缘 1 月 / 浏览器 1 天)',
+      build: () => ({
+        description: '缓存静态资源',
+        expression: staticExpr,
+        enabled: true,
+        action: 'set_cache_settings',
+        action_parameters: {
+          cache: true,
+          edge_ttl: { mode: 'override_origin', default: 2592000 },
+          browser_ttl: { mode: 'override_origin', default: 86400 },
+        },
+      }),
+    },
+    {
+      label: '不缓存 WordPress 后台(/wp-admin、wp-login.php)',
+      build: () => ({
+        description: '后台不缓存',
+        expression: '(starts_with(http.request.uri.path, "/wp-admin") or http.request.uri.path eq "/wp-login.php")',
+        enabled: true,
+        action: 'set_cache_settings',
+        action_parameters: { cache: false },
+      }),
+    },
+    {
+      label: '不缓存接口(/api/*)',
+      build: () => ({
+        description: 'API 不缓存',
+        expression: '(starts_with(http.request.uri.path, "/api/"))',
+        enabled: true,
+        action: 'set_cache_settings',
+        action_parameters: { cache: false },
+      }),
+    },
+  ],
+  redirect: [
+    {
+      label: 'www 跳转到根域名(301,保留路径)',
+      build: (zone) => ({
+        description: 'www → 根域名',
+        expression: `(http.host eq "www.${zone}")`,
+        enabled: true,
+        action: 'redirect',
+        action_parameters: {
+          from_value: {
+            target_url: { expression: `concat("https://${zone}", http.request.uri.path)` },
+            status_code: 301,
+            preserve_query_string: true,
+          },
+        },
+      }),
+    },
+    {
+      label: '根域名跳转到 www(301,保留路径)',
+      build: (zone) => ({
+        description: '根域名 → www',
+        expression: `(http.host eq "${zone}")`,
+        enabled: true,
+        action: 'redirect',
+        action_parameters: {
+          from_value: {
+            target_url: { expression: `concat("https://www.${zone}", http.request.uri.path)` },
+            status_code: 301,
+            preserve_query_string: true,
+          },
+        },
+      }),
+    },
+  ],
+  headers: [
+    {
+      label: '常用安全响应头(X-Frame-Options / nosniff / Referrer-Policy)',
+      build: () => ({
+        description: '安全响应头',
+        expression: ALL_PATHS,
+        enabled: true,
+        action: 'rewrite',
+        action_parameters: {
+          headers: {
+            'X-Frame-Options': { operation: 'set', value: 'SAMEORIGIN' },
+            'X-Content-Type-Options': { operation: 'set', value: 'nosniff' },
+            'Referrer-Policy': { operation: 'set', value: 'strict-origin-when-cross-origin' },
+          },
+        },
+      }),
+    },
+    {
+      label: 'HSTS 强制 HTTPS(1 年,含子域)',
+      build: () => ({
+        description: 'HSTS',
+        expression: ALL_PATHS,
+        enabled: true,
+        action: 'rewrite',
+        action_parameters: {
+          headers: {
+            'Strict-Transport-Security': { operation: 'set', value: 'max-age=31536000; includeSubDomains' },
+          },
+        },
+      }),
+    },
+    {
+      label: '删除暴露信息的响应头(X-Powered-By 等)',
+      build: () => ({
+        description: '隐藏后端信息',
+        expression: ALL_PATHS,
+        enabled: true,
+        action: 'rewrite',
+        action_parameters: {
+          headers: {
+            'X-Powered-By': { operation: 'remove' },
+            'X-AspNet-Version': { operation: 'remove' },
+            'X-AspNetMvc-Version': { operation: 'remove' },
+          },
+        },
+      }),
+    },
+  ],
+};
+const currentTemplates = computed(() => TEMPLATES[activeTab.value] || []);
+
 const rules = ref([]); // local working copy of CF rule objects
 const loading = ref(false);
 const saving = ref(false);
@@ -129,6 +256,15 @@ function openAdd() {
   editIndex.value = -1;
   resetForm();
   dialogVisible.value = true;
+}
+
+function addTemplate(idx) {
+  if (!zoneId.value) return ElMessage.warning('请先选择域名');
+  const t = currentTemplates.value[idx];
+  if (!t) return;
+  rules.value.push(t.build(currentZone()?.name || ''));
+  dirty.value = true;
+  ElMessage.success(`已添加「${t.label.split('(')[0]}」,检查无误后点「保存到 Cloudflare」`);
 }
 function openEdit(rule, idx) {
   // Don't reinterpret a rule whose action doesn't belong to the active phase — it
@@ -324,6 +460,18 @@ function ttlLabel(t) {
       <el-option v-for="z in zones" :key="z.id" :label="z.name" :value="z.id" />
     </el-select>
     <div class="spacer"></div>
+    <el-dropdown :disabled="!zoneId" @command="addTemplate">
+      <el-button :disabled="!zoneId">
+        常用规则<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+      </el-button>
+      <template #dropdown>
+        <el-dropdown-menu>
+          <el-dropdown-item v-for="(t, i) in currentTemplates" :key="i" :command="i">
+            {{ t.label }}
+          </el-dropdown-item>
+        </el-dropdown-menu>
+      </template>
+    </el-dropdown>
     <el-button :disabled="!zoneId" @click="openAdd">
       <el-icon style="margin-right: 4px"><Plus /></el-icon>新增规则
     </el-button>
