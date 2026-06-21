@@ -128,3 +128,46 @@ export async function deleteRecord(token, zoneId, recordId) {
   const data = await cfFetch(token, 'DELETE', `/zones/${zoneId}/dns_records/${recordId}`);
   return data.result;
 }
+
+/* --------------------------- cache / zone settings ------------------------- */
+
+/** Purge cache: body is { purge_everything: true } or { files: [urls] }. */
+export async function purgeCache(token, zoneId, body) {
+  const data = await cfFetch(token, 'POST', `/zones/${zoneId}/purge_cache`, { body });
+  return data.result;
+}
+
+/** GET a single zone setting -> { id, value, editable, modified_on }. */
+export async function getZoneSetting(token, zoneId, key) {
+  const data = await cfFetch(token, 'GET', `/zones/${zoneId}/settings/${key}`);
+  return data.result;
+}
+
+/** PATCH a single zone setting value. */
+export async function patchZoneSetting(token, zoneId, key, value) {
+  const data = await cfFetch(token, 'PATCH', `/zones/${zoneId}/settings/${key}`, { body: { value } });
+  return data.result;
+}
+
+/* ------------------------------ rulesets ---------------------------------- */
+// Cache Rules / Redirect Rules / Transform Rules all live in the Rulesets engine
+// as the zone's entrypoint ruleset for a given phase.
+
+/** Read a phase's entrypoint ruleset; returns { rules: [] } when none exists yet. */
+export async function getPhaseEntrypoint(token, zoneId, phase) {
+  try {
+    const data = await cfFetch(token, 'GET', `/zones/${zoneId}/rulesets/phases/${phase}/entrypoint`);
+    return data.result;
+  } catch (e) {
+    if (e instanceof CloudflareError && e.status === 404) return { rules: [] };
+    throw e;
+  }
+}
+
+/** Replace a phase's entrypoint rules with the given array. */
+export async function putPhaseEntrypoint(token, zoneId, phase, rules) {
+  const data = await cfFetch(token, 'PUT', `/zones/${zoneId}/rulesets/phases/${phase}/entrypoint`, {
+    body: { rules },
+  });
+  return data.result;
+}

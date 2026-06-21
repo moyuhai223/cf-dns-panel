@@ -7,6 +7,7 @@ const routes = [
   { path: '/', name: 'records', component: () => import('./views/Records.vue') },
   { path: '/accounts', name: 'accounts', component: () => import('./views/Accounts.vue') },
   { path: '/ddns', name: 'ddns', component: () => import('./views/Ddns.vue') },
+  { path: '/cache', name: 'cache', component: () => import('./views/Cache.vue') },
   { path: '/audit', name: 'audit', component: () => import('./views/Audit.vue') },
 ];
 
