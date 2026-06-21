@@ -4,6 +4,7 @@ import { requireAuth, clientIp } from '../middleware/auth.js';
 import {
   listRecords,
   listAllRecords,
+  getZone,
   createRecord,
   updateRecord,
   patchRecord,
@@ -15,6 +16,8 @@ import { writeAudit } from '../services/audit.js';
 
 const IMPORT_MAX = 1000; // hard cap on records accepted per import request
 const IMPORT_CONCURRENCY = 6; // parallel Cloudflare writes during an import
+const PROXYABLE = new Set(['A', 'AAAA', 'CNAME']);
+const MANAGED = new Set(['SOA', 'NS']); // Cloudflare-managed; import never touches them
 
 function tokenForAccount(accountId) {
   const acct = db.prepare('SELECT * FROM accounts WHERE id = ?').get(accountId);
@@ -142,10 +145,9 @@ export default async function recordRoutes(fastify) {
   // (except Cloudflare-managed SOA/NS). dryRun computes the plan and writes nothing.
   fastify.post('/:zoneId/import', async (request, reply) => {
     const { zoneId } = request.params;
-    const { accountId, zoneName, records, dryRun, deleteMissing } = request.body || {};
+    const { accountId, records, dryRun, deleteMissing } = request.body || {};
     const token = tokenForAccount(accountId);
     if (!token) return reply.code(400).send({ error: 'invalid_account', message: '账号无效' });
-    if (!zoneName) return reply.code(400).send({ error: 'invalid_input', message: '缺少 zoneName' });
     if (!Array.isArray(records) || records.length === 0) {
       return reply.code(400).send({ error: 'invalid_input', message: '没有可导入的记录' });
     }
@@ -153,8 +155,13 @@ export default async function recordRoutes(fastify) {
       return reply.code(413).send({ error: 'too_many_records', message: `单次最多导入 ${IMPORT_MAX} 条` });
     }
 
+    // Derive the zone name from the zone id itself — never trust a client-supplied
+    // name to qualify FQDNs. A mismatched name would make every record look
+    // "missing" and (under deleteMissing) could wipe the whole zone.
+    let zoneName;
     let existing;
     try {
+      zoneName = (await getZone(token, zoneId)).name;
       existing = await listAllRecords(token, zoneId);
     } catch (e) {
       return onCfError(reply, e);
@@ -170,7 +177,15 @@ export default async function recordRoutes(fastify) {
       byKey.get(k).push(r);
     }
 
-    const result = { total: records.length, created: 0, updated: 0, deleted: 0, failed: 0, errors: [] };
+    const result = {
+      total: records.length,
+      created: 0,
+      updated: 0,
+      deleted: 0,
+      skipped: 0,
+      failed: 0,
+      errors: [],
+    };
 
     // Phase 1 — plan synchronously (bucket matching mutates state, so it must be serial).
     const plan = [];
@@ -185,6 +200,11 @@ export default async function recordRoutes(fastify) {
         }
         type = String(raw.type || '').trim().toUpperCase();
         if (!type) throw new Error('缺少 type');
+        // SOA/NS are Cloudflare-managed: never create, update, or delete them.
+        if (MANAGED.has(type)) {
+          result.skipped++;
+          continue;
+        }
         if (raw.content == null || String(raw.content).trim() === '') throw new Error('content 为空');
         name = toFqdn(raw.name, zoneName);
         const body = sanitizeRecord({ ...raw, type, name });
@@ -218,6 +238,14 @@ export default async function recordRoutes(fastify) {
     const willUpdate = plan.filter((p) => p.targetId).length;
     const willDelete = deleteMissing ? leftovers.length : 0;
 
+    // A file that parsed to nothing usable must never be treated as "delete all".
+    if (deleteMissing && plan.length === 0) {
+      return reply.code(400).send({
+        error: 'empty_plan',
+        message: '文件未解析出任何有效记录,已拒绝执行「完全同步」删除',
+      });
+    }
+
     if (dryRun) {
       return {
         dryRun: true,
@@ -225,6 +253,7 @@ export default async function recordRoutes(fastify) {
         willCreate,
         willUpdate,
         willDelete,
+        skipped: result.skipped,
         failed: result.failed,
         errors: result.errors.sort((a, b) => a.line - b.line),
       };
@@ -336,20 +365,40 @@ export default async function recordRoutes(fastify) {
     if (ids.length > IMPORT_MAX) {
       return reply.code(413).send({ error: 'too_many_records', message: `单次最多 ${IMPORT_MAX} 条` });
     }
-    const body = {};
-    if (patch && patch.ttl !== undefined) {
-      const t = Number(patch.ttl);
-      if (Number.isFinite(t) && t > 0) body.ttl = t;
-    }
-    if (patch && patch.proxied !== undefined) body.proxied = !!patch.proxied;
-    if (!Object.keys(body).length) {
+    const wantTtl = patch && patch.ttl !== undefined ? Number(patch.ttl) : undefined;
+    const ttl = Number.isFinite(wantTtl) && wantTtl > 0 ? wantTtl : undefined;
+    const hasProxied = !!(patch && patch.proxied !== undefined);
+    const proxied = hasProxied ? !!patch.proxied : undefined;
+    if (ttl === undefined && !hasProxied) {
       return reply.code(400).send({ error: 'invalid_input', message: '没有要修改的字段' });
     }
-    const result = { updated: 0, failed: 0, errors: [] };
+
+    // `proxied` only applies to A/AAAA/CNAME, so look up each record's type and
+    // apply it selectively rather than letting Cloudflare reject the whole batch.
+    let typeById = null;
+    if (hasProxied) {
+      try {
+        typeById = new Map((await listAllRecords(token, zoneId)).map((r) => [r.id, r.type]));
+      } catch (e) {
+        return onCfError(reply, e);
+      }
+    }
+
+    const result = { updated: 0, skipped: 0, failed: 0, errors: [] };
     let cursor = 0;
     async function worker() {
       while (cursor < ids.length) {
         const id = ids[cursor++];
+        const body = {};
+        if (ttl !== undefined) body.ttl = ttl;
+        if (hasProxied && PROXYABLE.has(typeById.get(id))) {
+          body.proxied = proxied;
+          if (proxied) body.ttl = 1; // proxied records must use automatic TTL
+        }
+        if (!Object.keys(body).length) {
+          result.skipped++; // e.g. proxied requested on a non-proxyable record
+          continue;
+        }
         try {
           const res = await patchRecord(token, zoneId, id, body);
           result.updated++;

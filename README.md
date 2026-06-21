@@ -34,11 +34,12 @@ curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/instal
 
 ## 特性
 
-- 🔐 管理员登录(单用户,首次初始化,可改密),会话用签名 httpOnly Cookie。
-- 🔑 录入多个 Cloudflare API Token;录入前先校验,落盘 **AES-256-GCM 加密**,列表只显示末 4 位。
-- 🌐 列出 Token 可见的全部 zone;选定后管理 A/AAAA/CNAME/TXT/MX/NS/SRV/CAA 等记录。
-- 🟠 A/AAAA/CNAME 支持 proxied(橙云)开关、TTL、优先级。
-- 📤 解析记录**导入 / 导出**(CSV / JSON):导入按「同名同类型(二级域名 + 类型)」**覆盖更新**,其余新增,**不删除**未列出的记录;单次最多 1000 条。
+- 🔐 管理员登录(单用户,首次初始化,可改密),会话用签名 httpOnly Cookie;支持**两步验证(TOTP)**。
+- 🔑 录入多个 Cloudflare API Token(用户令牌与 `cfat_` 账户令牌均可);录入前先校验,落盘 **AES-256-GCM 加密**,列表只显示末 4 位。
+- 🌐 列出 Token 可见的全部 zone;选定后管理 A/AAAA/CNAME/TXT/MX/NS/SRV/CAA 等记录,**客户端即时搜索**(名称/内容/备注)与筛选、分页。
+- 🟠 A/AAAA/CNAME 支持 proxied(橙云)开关、TTL、优先级;表格**多选批量**删除 / 改 TTL / 开关代理。
+- 📤 解析记录**导入 / 导出**(CSV / JSON / **BIND .txt**):导入按「同名同类型」**覆盖更新**;支持**导入预演**与可选的**完全同步**(删除文件中没有的记录,跳过 SOA/NS);单次最多 1000 条。
+- 🔁 **DDNS**:给 A/AAAA 记录生成专属更新 URL,在设备上定时调用即把记录更新为来访 IP。
 - 🧾 每次新增/修改/删除写审计日志(操作者、时间、记录、来源 IP)。
 - 📦 单进程同时托管 SPA 与 `/api`;`node server/index.js` 一键启动。
 
@@ -136,12 +137,16 @@ Docker 方式见 [deploy/Dockerfile](deploy/Dockerfile)。
 | POST | `/auth/setup` | 首次创建管理员 |
 | POST | `/auth/login` `/auth/logout` | 登录 / 登出 |
 | POST | `/auth/change-password` | 改密 |
+| POST | `/auth/2fa/setup` `/enable` `/disable` | 两步验证 设置 / 启用 / 关闭 |
 | GET/POST/DELETE | `/accounts` `…/:id` | Token 列表 / 录入(先校验) / 删除 |
 | GET | `/accounts/:id/zones` | 列出该 Token 的 zone |
-| GET/POST | `/zones/:zoneId/records` | 记录列表(`?accountId=&type=&name=&page=`)/ 新增 |
+| GET/POST | `/zones/:zoneId/records` | 记录列表 / 新增 |
 | PUT/DELETE | `/zones/:zoneId/records/:recordId` | 修改 / 删除 |
+| POST | `/zones/:zoneId/records/bulk-delete` `/bulk-patch` | 批量删除 / 批量改(ttl、proxied) |
 | GET | `/zones/:zoneId/export` | 导出该 zone 全部记录(JSON) |
-| POST | `/zones/:zoneId/import` | 批量导入(按 type+name upsert,覆盖同名同类型) |
+| POST | `/zones/:zoneId/import` | 批量导入(`dryRun` 预演 / `deleteMissing` 完全同步) |
+| GET/POST/DELETE | `/ddns` `…/:id` | DDNS 配置 列表 / 新增 / 删除(需登录) |
+| GET | `/ddns/update?key=&ip=` | **DDNS 更新(公开,凭 key 鉴权)** |
 | GET | `/audit` | 审计日志(分页) |
 
 ## 安全说明

@@ -80,6 +80,12 @@ export async function listZones(token) {
   return all;
 }
 
+/** Fetch a single zone's metadata (used to derive the authoritative zone name). */
+export async function getZone(token, zoneId) {
+  const data = await cfFetch(token, 'GET', `/zones/${zoneId}`);
+  return data.result;
+}
+
 export async function listRecords(token, zoneId, { type, name, page = 1, perPage = 100 } = {}) {
   return cfFetch(token, 'GET', `/zones/${zoneId}/dns_records`, {
     query: { type, name, page, per_page: perPage, order: 'type', direction: 'asc' },

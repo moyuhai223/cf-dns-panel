@@ -646,7 +646,8 @@ async function doImport() {
     >
       <template #default>
         预览:将<b>新增 {{ importPreview.willCreate }}</b>、<b>覆盖 {{ importPreview.willUpdate }}</b>、<b>删除
-        {{ importPreview.willDelete }}</b> 条{{ importPreview.failed ? `,解析失败 ${importPreview.failed}` : '' }}。
+        {{ importPreview.willDelete }}</b> 条{{ importPreview.skipped ? `,跳过 ${importPreview.skipped}(SOA/NS)` : ''
+        }}{{ importPreview.failed ? `,解析失败 ${importPreview.failed}` : '' }}。
       </template>
     </el-alert>
 
@@ -654,6 +655,9 @@ async function doImport() {
       <el-tag type="success">新增 {{ importResult.created }}</el-tag>
       <el-tag type="warning" style="margin-left: 6px">覆盖 {{ importResult.updated }}</el-tag>
       <el-tag type="danger" style="margin-left: 6px">删除 {{ importResult.deleted || 0 }}</el-tag>
+      <el-tag v-if="importResult.skipped" type="info" style="margin-left: 6px">
+        跳过 {{ importResult.skipped }}
+      </el-tag>
       <el-tag :type="importResult.failed ? 'danger' : 'info'" style="margin-left: 6px">
         失败 {{ importResult.failed }}
       </el-tag>
