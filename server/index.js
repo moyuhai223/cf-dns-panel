@@ -27,6 +27,13 @@ const app = Fastify({
 await app.register(fastifyCookie, { secret: config.appSecret });
 await app.register(fastifyRateLimit, { global: false });
 
+// Never leak internal error details; log them, return a generic 500.
+app.setErrorHandler((err, request, reply) => {
+  request.log.error(err);
+  reply.code(err.statusCode && err.statusCode >= 400 ? err.statusCode : 500);
+  reply.send({ error: 'server_error', message: '服务器内部错误' });
+});
+
 app.get(`${prefix}/healthz`, async () => ({ ok: true, ts: Date.now() }));
 
 // All JSON endpoints live under <prefix>/api.

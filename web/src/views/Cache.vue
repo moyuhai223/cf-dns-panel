@@ -43,6 +43,8 @@ const SSL_MODES = [
 const currentZone = () => zones.value.find((z) => z.id === zoneId.value);
 const sval = (k) => settings.value[k]?.value;
 const savail = (k) => !!settings.value[k]; // setting present (available on plan/perm)
+const seditable = (k) => settings.value[k]?.editable !== false; // Cloudflare says writable
+const sdisabled = (k) => !savail(k) || !seditable(k);
 
 onMounted(async () => {
   try {
@@ -202,14 +204,14 @@ async function purgeByUrl() {
         <el-form-item label="开发模式(3 小时绕过缓存)">
           <el-switch
             :model-value="sval('development_mode') === 'on'"
-            :disabled="!savail('development_mode') || savingKey === 'development_mode'"
+            :disabled="sdisabled('development_mode') || savingKey === 'development_mode'"
             @change="(v) => patch('development_mode', v ? 'on' : 'off')"
           />
         </el-form-item>
         <el-form-item label="缓存级别">
           <el-select
             :model-value="sval('cache_level')"
-            :disabled="!savail('cache_level')"
+            :disabled="sdisabled('cache_level')"
             style="width: 280px"
             @change="(v) => patch('cache_level', v)"
           >
@@ -219,7 +221,7 @@ async function purgeByUrl() {
         <el-form-item label="浏览器缓存 TTL">
           <el-select
             :model-value="sval('browser_cache_ttl')"
-            :disabled="!savail('browser_cache_ttl')"
+            :disabled="sdisabled('browser_cache_ttl')"
             style="width: 280px"
             @change="(v) => patch('browser_cache_ttl', v)"
           >
@@ -229,21 +231,21 @@ async function purgeByUrl() {
         <el-form-item label="Always Online">
           <el-switch
             :model-value="sval('always_online') === 'on'"
-            :disabled="!savail('always_online') || savingKey === 'always_online'"
+            :disabled="sdisabled('always_online') || savingKey === 'always_online'"
             @change="(v) => patch('always_online', v ? 'on' : 'off')"
           />
         </el-form-item>
         <el-form-item label="始终使用 HTTPS">
           <el-switch
             :model-value="sval('always_use_https') === 'on'"
-            :disabled="!savail('always_use_https') || savingKey === 'always_use_https'"
+            :disabled="sdisabled('always_use_https') || savingKey === 'always_use_https'"
             @change="(v) => patch('always_use_https', v ? 'on' : 'off')"
           />
         </el-form-item>
         <el-form-item label="SSL/TLS 模式">
           <el-select
             :model-value="sval('ssl')"
-            :disabled="!savail('ssl')"
+            :disabled="sdisabled('ssl')"
             style="width: 280px"
             @change="(v) => patch('ssl', v)"
           >

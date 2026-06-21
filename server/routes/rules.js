@@ -47,6 +47,9 @@ export default async function rulesRoutes(fastify) {
     if (!PHASES.has(phase)) return reply.code(400).send({ error: 'invalid_phase', message: '不支持的规则类型' });
     const token = tokenFor(accountId);
     if (!token) return reply.code(400).send({ error: 'invalid_account', message: '账号无效' });
+    if (!zoneId || typeof zoneId !== 'string') {
+      return reply.code(400).send({ error: 'invalid_input', message: '缺少 zoneId' });
+    }
     try {
       const rs = await getPhaseEntrypoint(token, zoneId, phase);
       return { rules: rs.rules || [] };
@@ -63,10 +66,18 @@ export default async function rulesRoutes(fastify) {
     if (!PHASES.has(phase)) return reply.code(400).send({ error: 'invalid_phase', message: '不支持的规则类型' });
     const token = tokenFor(accountId);
     if (!token) return reply.code(400).send({ error: 'invalid_account', message: '账号无效' });
+    if (!zoneId || typeof zoneId !== 'string') {
+      return reply.code(400).send({ error: 'invalid_input', message: '缺少 zoneId' });
+    }
     if (!Array.isArray(rules)) return reply.code(400).send({ error: 'invalid_input', message: 'rules 必须是数组' });
     if (rules.length > 100) return reply.code(400).send({ error: 'too_many', message: '规则过多(上限 100)' });
+    const cleaned = rules.map(sanitizeRule);
+    const badIdx = cleaned.findIndex((r) => !r.action || !r.expression);
+    if (badIdx >= 0) {
+      return reply.code(400).send({ error: 'invalid_input', message: `第 ${badIdx + 1} 条规则缺少动作或表达式` });
+    }
     try {
-      const r = await putPhaseEntrypoint(token, zoneId, phase, rules.map(sanitizeRule));
+      const r = await putPhaseEntrypoint(token, zoneId, phase, cleaned);
       writeAudit({
         username: request.user.username, accountId, zoneId, zoneName,
         action: 'update', rrType: 'rules', rrName: phase,

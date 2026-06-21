@@ -15,6 +15,7 @@ const PHASES = [
   { key: 'redirect', phase: 'http_request_dynamic_redirect', label: '重定向规则' },
   { key: 'headers', phase: 'http_response_headers_transform', label: '转换 · 响应头' },
 ];
+const PHASE_ACTION = { cache: 'set_cache_settings', redirect: 'redirect', headers: 'rewrite' };
 const activeTab = ref('cache');
 const currentPhase = computed(() => PHASES.find((p) => p.key === activeTab.value));
 
@@ -106,6 +107,7 @@ async function confirmTabSwitch(next) {
 const dialogVisible = ref(false);
 const editIndex = ref(-1);
 const DEFAULTS = {
+  _orig: null,
   description: '',
   expression: '',
   enabled: true,
@@ -129,8 +131,14 @@ function openAdd() {
   dialogVisible.value = true;
 }
 function openEdit(rule, idx) {
+  // Don't reinterpret a rule whose action doesn't belong to the active phase — it
+  // would be rewritten into the wrong type and corrupted.
+  if (rule.action && rule.action !== PHASE_ACTION[activeTab.value]) {
+    return ElMessage.warning('该规则的动作与当前类型不符,暂不支持在此编辑');
+  }
   editIndex.value = idx;
   resetForm();
+  form._orig = JSON.parse(JSON.stringify(rule)); // preserve fields the form doesn't expose
   form.description = rule.description || '';
   form.expression = rule.expression || '';
   form.enabled = rule.enabled !== false;
@@ -141,15 +149,16 @@ function openEdit(rule, idx) {
     form.browserTtl = ttlFromCf(ap.browser_ttl);
   } else if (activeTab.value === 'redirect') {
     const fv = ap.from_value || {};
-    form.targetUrl = fv.target_url?.value || '';
+    form.targetUrl = fv.target_url?.value ?? fv.target_url?.expression ?? '';
     form.statusCode = fv.status_code || 301;
-    form.preserveQuery = fv.preserve_query_string !== false;
+    form.preserveQuery = fv.preserve_query_string === true; // CF default is false
   } else {
     const h = ap.headers || {};
     const ops = Object.entries(h).map(([name, v]) => ({
       name,
       operation: v.operation || 'set',
       value: v.value || '',
+      expression: v.expression || '',
     }));
     form.headerOps = ops.length ? ops : [{ name: '', operation: 'set', value: '' }];
   }
@@ -161,38 +170,58 @@ function ttlFromCf(t) {
   if (t.mode === 'override_origin') return t.default ?? 'respect';
   return 'respect';
 }
-function ttlToCf(v) {
-  return v === 'respect' ? { mode: 'respect_origin' } : { mode: 'override_origin', default: Number(v) };
+function mergeTtl(orig, v) {
+  if (v === 'respect') return { mode: 'respect_origin' };
+  const out = orig && typeof orig === 'object' ? { ...orig } : {}; // keep extras (status_code_ttl…)
+  out.mode = 'override_origin';
+  out.default = Number(v);
+  return out;
 }
 
 function buildRule() {
-  const rule = {
-    description: form.description || undefined,
-    expression: form.expression.trim(),
-    enabled: form.enabled,
-  };
+  // When editing, start from the original rule so fields the form doesn't show
+  // (cache_key, status_code_ttl, serve_stale, dynamic targets, …) survive.
+  const base = form._orig ? JSON.parse(JSON.stringify(form._orig)) : {};
+  for (const k of ['id', 'version', 'ref', 'last_updated']) delete base[k];
+  const rule = { ...base };
+  rule.description = form.description || undefined;
+  rule.expression = form.expression.trim();
+  rule.enabled = form.enabled;
+
   if (activeTab.value === 'cache') {
     rule.action = 'set_cache_settings';
-    rule.action_parameters =
-      form.cacheBehavior === 'bypass'
-        ? { cache: false }
-        : { cache: true, edge_ttl: ttlToCf(form.edgeTtl), browser_ttl: ttlToCf(form.browserTtl) };
+    const ap = rule.action_parameters && typeof rule.action_parameters === 'object' ? { ...rule.action_parameters } : {};
+    if (form.cacheBehavior === 'bypass') {
+      ap.cache = false;
+      delete ap.edge_ttl;
+      delete ap.browser_ttl;
+    } else {
+      ap.cache = true;
+      ap.edge_ttl = mergeTtl(ap.edge_ttl, form.edgeTtl);
+      ap.browser_ttl = mergeTtl(ap.browser_ttl, form.browserTtl);
+    }
+    rule.action_parameters = ap;
   } else if (activeTab.value === 'redirect') {
     rule.action = 'redirect';
-    rule.action_parameters = {
-      from_value: {
-        target_url: { value: form.targetUrl.trim() },
-        status_code: Number(form.statusCode),
-        preserve_query_string: !!form.preserveQuery,
-      },
-    };
+    const ap = rule.action_parameters && typeof rule.action_parameters === 'object' ? { ...rule.action_parameters } : {};
+    const fv = ap.from_value && typeof ap.from_value === 'object' ? { ...ap.from_value } : {};
+    const target = form.targetUrl.trim();
+    // A full URL is a static target; anything else is treated as a CF expression.
+    fv.target_url = /^https?:\/\//i.test(target) ? { value: target } : { expression: target };
+    fv.status_code = Number(form.statusCode);
+    fv.preserve_query_string = !!form.preserveQuery;
+    ap.from_value = fv;
+    rule.action_parameters = ap;
   } else {
     rule.action = 'rewrite';
     const headers = {};
     for (const op of form.headerOps) {
       const name = op.name.trim();
       if (!name) continue;
-      headers[name] = op.operation === 'remove' ? { operation: 'remove' } : { operation: 'set', value: op.value };
+      if (op.operation === 'remove') headers[name] = { operation: 'remove' };
+      else if (op.value) headers[name] = { operation: 'set', value: op.value };
+      else if (op.expression) headers[name] = { operation: 'set', expression: op.expression };
+      else headers[name] = { operation: 'set', value: '' };
     }
     rule.action_parameters = { headers };
   }

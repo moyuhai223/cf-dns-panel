@@ -40,6 +40,8 @@ curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/instal
 - 🟠 A/AAAA/CNAME 支持 proxied(橙云)开关、TTL、优先级;表格**多选批量**删除 / 改 TTL / 开关代理。
 - 📤 解析记录**导入 / 导出**(CSV / JSON / **BIND .txt**):导入按「同名同类型」**覆盖更新**;支持**导入预演**与可选的**完全同步**(删除文件中没有的记录,跳过 SOA/NS);单次最多 1000 条。
 - 🔁 **DDNS**:给 A/AAAA 记录生成专属更新 URL,在设备上定时调用即把记录更新为来访 IP。
+- ⚡ **缓存管理**:清除缓存(全部 / 按 URL)、开发模式、缓存级别、浏览器缓存 TTL、Always Online、始终 HTTPS、SSL 模式。
+- 📐 **规则引擎**(Rulesets):**Cache Rules**(按表达式设缓存/边缘·浏览器 TTL)、**重定向规则**、**响应头转换**;本地编辑、整组保存。
 - 🧾 每次新增/修改/删除写审计日志(操作者、时间、记录、来源 IP)。
 - 📦 单进程同时托管 SPA 与 `/api`;`node server/index.js` 一键启动。
 
@@ -147,6 +149,9 @@ Docker 方式见 [deploy/Dockerfile](deploy/Dockerfile)。
 | POST | `/zones/:zoneId/import` | 批量导入(`dryRun` 预演 / `deleteMissing` 完全同步) |
 | GET/POST/DELETE | `/ddns` `…/:id` | DDNS 配置 列表 / 新增 / 删除(需登录) |
 | GET | `/ddns/update?key=&ip=` | **DDNS 更新(公开,凭 key 鉴权)** |
+| GET/PATCH | `/cache/settings` | 读取 / 修改缓存与 SSL 设置 |
+| POST | `/cache/purge` | 清除缓存(全部 / 按 URL) |
+| GET/PUT | `/rules/:phase` | 读取 / 整组替换某规则阶段(缓存/重定向/响应头) |
 | GET | `/audit` | 审计日志(分页) |
 
 ## 安全说明
