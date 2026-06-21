@@ -10,7 +10,7 @@
 在一台全新的 Debian/Ubuntu 或 RHEL 系(CentOS/Alma/Rocky)VPS 上,以 root 执行:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | bash
 ```
 
 脚本会自动完成:安装 Node 22 与构建工具 → 克隆代码到 `/opt/cf-dns-panel` → `npm install` 并构建前端 → 生成带随机 `APP_SECRET` 的 `.env`(权限 600)→ 注册并启动 systemd 服务(以非登录用户 `cfpanel` 运行,仅监听 `127.0.0.1:8787`)→ 校验 `/healthz`。**幂等**:再次执行即更新到最新代码并重启,且不会覆盖已有 `.env`。
@@ -20,16 +20,16 @@ curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/instal
 自定义端口/目录等(均有默认值,用长参数最稳妥):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | sudo bash -s -- --port 9000 --install-dir /opt/cfdns
+curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | bash -s -- --port 9000 --install-dir /opt/cfdns
 ```
 
 卸载:
 
 ```bash
 # 删服务,保留数据
-curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | sudo bash -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | bash -s -- --uninstall
 # 连同安装目录 + 服务用户一起删(会丢失面板数据库)
-curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | sudo bash -s -- --uninstall --purge
+curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | bash -s -- --uninstall --purge
 ```
 
 ## 特性

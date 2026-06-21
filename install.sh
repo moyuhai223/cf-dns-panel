@@ -8,7 +8,7 @@
 # This installer therefore does NOT touch nginx, certificates or any firewall.
 #
 # Bootstrap (install or update):
-#   curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | bash
 #
 # Configure via environment variables (or long flags), all optional:
 #   INSTALL_DIR   install location               (default: /opt/cf-dns-panel)
@@ -19,8 +19,8 @@
 #   NODE_MAJOR    Node major to install if absent (default: 22)
 #
 # Uninstall:
-#   curl -fsSL .../install.sh | sudo bash -s -- --uninstall            # remove service + unit
-#   curl -fsSL .../install.sh | sudo bash -s -- --uninstall --purge    # ALSO remove dir + user (DATA LOSS)
+#   curl -fsSL .../install.sh | bash -s -- --uninstall            # remove service + unit
+#   curl -fsSL .../install.sh | bash -s -- --uninstall --purge    # ALSO remove dir + user (DATA LOSS)
 #
 # The script is piped to bash via stdin, so it NEVER reads config from stdin;
 # any unavoidable prompt reads from /dev/tty. It is fully non-interactive by default.
@@ -28,10 +28,6 @@
 set -o errexit
 set -o nounset
 set -o pipefail
-
-# Capture original arguments BEFORE any parsing/consumption, so a sudo re-exec
-# (saved-file, non-root case) can faithfully replay the operator's flags.
-ORIG_ARGS=("$@")
 
 # Make git non-interactive everywhere in this script: a wrong/private REPO_URL
 # turns into an immediate clean failure (caught by the ERR trap) rather than a
@@ -119,31 +115,17 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# Require root — re-exec via sudo when available (replaying ORIG_ARGS so flags
-# survive the boundary), else fail clearly. Done BEFORE argument parsing so the
-# saved arguments are still intact.
-#
-# IMPORTANT: when bootstrapped through a pipe, $0 is 'bash' and there is no file
-# to re-exec; we must NOT 'exec sudo bash bash ...'. In that case we print the
-# clear 'run with sudo' instruction instead.
+# Require root. The panel installs system packages, a systemd unit and a
+# dedicated service user, so root is mandatory. On a typical VPS you are already
+# root — no sudo needed. Done before argument parsing.
 # ---------------------------------------------------------------------------
 require_root() {
-  if [ "$(id -u)" -eq 0 ]; then
-    return 0
-  fi
-  # Piped/stdin bootstrap: no real script file to re-exec.
-  if [ ! -f "$0" ] || [ "$0" = "bash" ] || [ "$0" = "-bash" ] || [ "$0" = "sh" ]; then
+  if [ "$(id -u)" -ne 0 ]; then
     err "This installer must be run as root."
-    err "Re-run with:  curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | sudo bash"
+    err "Switch to root and re-run, e.g.:"
+    err "  curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | bash"
     exit 1
   fi
-  if command -v sudo >/dev/null 2>&1; then
-    warn "Not running as root; re-executing via sudo (preserving flags)..."
-    # -E preserves env-var configuration; ORIG_ARGS preserves flag configuration.
-    exec sudo -E bash "$0" "${ORIG_ARGS[@]}"
-  fi
-  err "This installer must be run as root (or via sudo). Aborting."
-  exit 1
 }
 require_root
 
@@ -707,11 +689,11 @@ Manage the service:
   journalctl -u ${SERVICE_NAME} -f
 
 Update to the latest code (idempotent — re-run this installer):
-  curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | sudo bash
+  curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | bash
 
 Uninstall:
-  curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | sudo bash -s -- --uninstall          # remove service + unit (keeps data)
-  curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | sudo bash -s -- --uninstall --purge  # ALSO delete ${INSTALL_DIR} + user (DATA LOSS)
+  curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | bash -s -- --uninstall          # remove service + unit (keeps data)
+  curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | bash -s -- --uninstall --purge  # ALSO delete ${INSTALL_DIR} + user (DATA LOSS)
 
 EOF
 }
