@@ -11,6 +11,7 @@ import authRoutes from './routes/auth.js';
 import accountRoutes from './routes/accounts.js';
 import recordRoutes from './routes/records.js';
 import auditRoutes from './routes/audit.js';
+import ddnsRoutes from './routes/ddns.js';
 
 const prefix = config.basePath; // '' or '/sub-path'
 const webDist = path.join(config.projectRoot, 'public');
@@ -33,6 +34,7 @@ await app.register(
     await api.register(accountRoutes, { prefix: '/accounts' });
     await api.register(recordRoutes, { prefix: '/zones' });
     await api.register(auditRoutes, { prefix: '/audit' });
+    await api.register(ddnsRoutes, { prefix: '/ddns' });
   },
   { prefix: `${prefix}/api` },
 );

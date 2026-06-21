@@ -50,6 +50,20 @@ CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS ddns (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  key         TEXT UNIQUE NOT NULL,
+  account_id  INTEGER NOT NULL,
+  zone_id     TEXT NOT NULL,
+  zone_name   TEXT NOT NULL,
+  record_id   TEXT NOT NULL,
+  record_name TEXT NOT NULL,
+  record_type TEXT NOT NULL,
+  last_ip     TEXT,
+  updated_at  TEXT,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `);
 
 export function isSetupComplete() {
