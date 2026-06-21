@@ -10,10 +10,14 @@
 # Bootstrap (install or update):
 #   curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | bash
 #
+# Pin to a released version (a git tag) instead of the latest main:
+#   curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | bash -s -- --ref v1.0.0
+#
 # Configure via environment variables (or long flags), all optional:
 #   INSTALL_DIR   install location               (default: /opt/cf-dns-panel)
 #   REPO_URL      git repository to clone         (default: derived from REPO_OWNER)
 #   BRANCH        git branch                      (default: main)
+#   REF           git branch OR tag to deploy     (default: BRANCH; e.g. v1.0.0)
 #   PORT          local listen port              (default: 8787)
 #   SERVICE_USER  systemd service account         (default: cfpanel)
 #   NODE_MAJOR    Node major to install if absent (default: 22)
@@ -46,6 +50,7 @@ REPO_NAME="cf-dns-panel"
 # ---------------------------------------------------------------------------
 INSTALL_DIR="${INSTALL_DIR:-/opt/cf-dns-panel}"
 BRANCH="${BRANCH:-main}"
+REF="${REF:-}"                         # branch OR tag to deploy; resolved to BRANCH after arg parsing
 PORT="${PORT:-8787}"
 SERVICE_USER="${SERVICE_USER:-cfpanel}"
 NODE_MAJOR="${NODE_MAJOR:-22}"
@@ -101,6 +106,8 @@ Options (env-var equivalent in parentheses):
   --install-dir DIR     Install location      (INSTALL_DIR)   default: ${INSTALL_DIR}
   --repo-url URL        Git repository URL     (REPO_URL)      default: ${REPO_URL}
   --branch NAME         Git branch             (BRANCH)        default: ${BRANCH}
+  --ref NAME            Git branch OR tag      (REF)           default: same as --branch
+                        Pin a release, e.g. --ref v1.0.0
   --port N              Local listen port      (PORT)          default: ${PORT}
   --service-user NAME   systemd service account(SERVICE_USER)  default: ${SERVICE_USER}
   --node-major N        Node major to install  (NODE_MAJOR)    default: ${NODE_MAJOR}
@@ -140,6 +147,8 @@ while [ "$#" -gt 0 ]; do
     --repo-url=*)     REPO_URL="${1#*=}"; shift ;;
     --branch)         BRANCH="${2:?--branch needs a value}"; shift 2 ;;
     --branch=*)       BRANCH="${1#*=}"; shift ;;
+    --ref)            REF="${2:?--ref needs a value}"; shift 2 ;;
+    --ref=*)          REF="${1#*=}"; shift ;;
     --port)           PORT="${2:?--port needs a value}"; shift 2 ;;
     --port=*)         PORT="${1#*=}"; shift ;;
     --service-user)   SERVICE_USER="${2:?--service-user needs a value}"; shift 2 ;;
@@ -152,6 +161,11 @@ while [ "$#" -gt 0 ]; do
     *) err "Unknown argument: $1"; usage >&2; exit 2 ;;
   esac
 done
+
+# REF defaults to BRANCH so `--branch` alone keeps working; `--ref`/REF may pin a
+# tag (e.g. v1.0.0) or any branch. Resolved here, AFTER parsing, so a later
+# `--branch` still feeds REF when `--ref` was not given.
+: "${REF:=$BRANCH}"
 
 # ---------------------------------------------------------------------------
 # Distro / package-manager detection.
@@ -384,6 +398,9 @@ ensure_service_user() {
 
 # ---------------------------------------------------------------------------
 # Fetch the code idempotently: clone, or fetch + hard reset an existing repo.
+# REF may be a branch OR a tag (e.g. v1.0.0). We fetch the ref and force the
+# working tree to exactly its commit via FETCH_HEAD — uniform for both, and it
+# lets an existing install switch between a branch and a pinned tag on re-run.
 #
 # git runs AS ROOT here, but on an update the .git dir is owned by the service
 # user (from a prior set_ownership). Mark the dir safe so git >= 2.35.2 does not
@@ -391,25 +408,29 @@ ensure_service_user() {
 # ---------------------------------------------------------------------------
 fetch_code() {
   if [ -d "${INSTALL_DIR}/.git" ]; then
-    info "Existing repo at ${INSTALL_DIR}; updating to origin/${BRANCH}..."
+    info "Existing repo at ${INSTALL_DIR}; updating to ${REF}..."
     git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
     git -C "$INSTALL_DIR" remote set-url origin "$REPO_URL"
-    git -C "$INSTALL_DIR" fetch --depth 1 origin "$BRANCH"
-    git -C "$INSTALL_DIR" checkout -B "$BRANCH" "origin/${BRANCH}"
-    git -C "$INSTALL_DIR" reset --hard "origin/${BRANCH}"
+    # Fetch the requested ref (branch or tag); FETCH_HEAD points at its commit.
+    git -C "$INSTALL_DIR" fetch --depth 1 origin "$REF"
+    # Detach onto exactly what we fetched — works for a tag (no local branch to
+    # track) and a branch alike, and never leaves a stale local branch behind.
+    git -C "$INSTALL_DIR" checkout -f --detach FETCH_HEAD
+    git -C "$INSTALL_DIR" reset --hard FETCH_HEAD
     git -C "$INSTALL_DIR" clean -fd
-    ok "Repository updated."
+    ok "Repository updated to ${REF}."
   else
     if [ -e "$INSTALL_DIR" ] && [ -n "$(ls -A "$INSTALL_DIR" 2>/dev/null || true)" ]; then
       err "${INSTALL_DIR} exists, is non-empty, and is not a git repo. Refusing to overwrite."
       err "Move it aside or choose a different --install-dir."
       exit 1
     fi
-    info "Cloning ${REPO_URL} (branch ${BRANCH}) into ${INSTALL_DIR}..."
+    info "Cloning ${REPO_URL} (ref ${REF}) into ${INSTALL_DIR}..."
     mkdir -p "$INSTALL_DIR"
-    git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
+    # --branch accepts a tag name as well as a branch; --depth 1 stays shallow.
+    git clone --depth 1 --branch "$REF" "$REPO_URL" "$INSTALL_DIR"
     git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
-    ok "Repository cloned."
+    ok "Repository cloned at ${REF}."
   fi
 }
 
@@ -666,11 +687,18 @@ start_and_verify() {
 # ---------------------------------------------------------------------------
 print_summary() {
   local url="http://127.0.0.1:${EFFECTIVE_PORT}${EFFECTIVE_BASE_PATH}"
+  # Best-effort: read the deployed version from package.json (node is present).
+  local version=""
+  if [ -f "${INSTALL_DIR}/package.json" ]; then
+    version="$(grep -m1 '"version"' "${INSTALL_DIR}/package.json" 2>/dev/null \
+      | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' || true)"
+  fi
   cat <<EOF
 
   cf-dns-panel is installed and running.
 
   Install location : ${INSTALL_DIR}
+  Version          : ${version:-unknown}  (ref ${REF})
   Service          : ${SERVICE_NAME} (systemd)  — User=${SERVICE_USER}
   Local URL        : ${url}
   Health endpoint  : ${url}/healthz
@@ -714,7 +742,7 @@ main() {
   fi
 
   info "Starting cf-dns-panel installation/update..."
-  info "  INSTALL_DIR=${INSTALL_DIR}  BRANCH=${BRANCH}  PORT=${PORT}"
+  info "  INSTALL_DIR=${INSTALL_DIR}  REF=${REF}  PORT=${PORT}"
   info "  SERVICE_USER=${SERVICE_USER}  NODE_MAJOR=${NODE_MAJOR}"
 
   detect_pkg_mgr

@@ -23,6 +23,12 @@ curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/instal
 curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | bash -s -- --port 9000 --install-dir /opt/cfdns
 ```
 
+默认安装最新 `main`;要**固定到某个发布版本**(git tag），加 `--ref`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/install.sh | bash -s -- --ref v1.0.0
+```
+
 卸载:
 
 ```bash
