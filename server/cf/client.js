@@ -66,6 +66,17 @@ export async function verifyToken(token) {
   return data.result;
 }
 
+/** Probe a GET endpoint without throwing — returns {ok} or {ok:false,status,message}. */
+export async function cfProbe(token, pathname) {
+  try {
+    await cfFetch(token, 'GET', pathname);
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof CloudflareError) return { ok: false, status: e.status, message: e.message };
+    return { ok: false, message: String((e && e.message) || e) };
+  }
+}
+
 /** List every zone the token can see (handles pagination). */
 export async function listZones(token) {
   const all = [];

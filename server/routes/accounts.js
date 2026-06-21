@@ -1,7 +1,7 @@
 import { db } from '../db.js';
 import { encrypt, decrypt } from '../crypto.js';
 import { requireAuth } from '../middleware/auth.js';
-import { verifyToken, listZones, listAllRecords, CloudflareError } from '../cf/client.js';
+import { verifyToken, listZones, listAllRecords, cfProbe, CloudflareError } from '../cf/client.js';
 
 const SEARCH_MAX_ZONES = 200; // bound the fan-out
 const SEARCH_MAX_RESULTS = 500;
@@ -66,6 +66,37 @@ export default async function accountRoutes(fastify) {
       }
       throw e;
     }
+  });
+
+  // GET /:id/check — probe (read-only) which Cloudflare features this token can use.
+  // Write-only capabilities (DNS edit / cache purge) can't be safely probed and are
+  // reported as "use to verify".
+  fastify.get('/:id/check', async (request, reply) => {
+    const acct = db.prepare('SELECT * FROM accounts WHERE id = ?').get(request.params.id);
+    if (!acct) return reply.code(404).send({ error: 'not_found', message: '账号不存在' });
+    const token = decrypt(acct.token_encrypted);
+
+    const checks = {};
+    let zones = [];
+    try {
+      zones = await listZones(token);
+      checks.zones = { ok: true, count: zones.length };
+    } catch (e) {
+      checks.zones = { ok: false, message: e instanceof CloudflareError ? e.message : String((e && e.message) || e) };
+    }
+
+    const z = zones[0];
+    if (z) {
+      const [dns, settings, rulesets] = await Promise.all([
+        cfProbe(token, `/zones/${z.id}/dns_records?per_page=1`),
+        cfProbe(token, `/zones/${z.id}/settings/ssl`),
+        cfProbe(token, `/zones/${z.id}/rulesets`),
+      ]);
+      checks.dnsRead = dns;
+      checks.zoneSettings = settings;
+      checks.rules = rulesets;
+    }
+    return { checks, sampleZone: z?.name || null };
   });
 
   // GET /:id/search?q=&type=  — search records across ALL zones of this account.
