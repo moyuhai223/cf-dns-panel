@@ -128,6 +128,7 @@ async function disable2fa() {
           <el-menu-item index="accounts" :route="{ name: 'accounts' }">账号 / Token</el-menu-item>
           <el-menu-item index="ddns" :route="{ name: 'ddns' }">DDNS</el-menu-item>
           <el-menu-item index="cache" :route="{ name: 'cache' }">缓存</el-menu-item>
+          <el-menu-item index="rules" :route="{ name: 'rules' }">规则</el-menu-item>
           <el-menu-item index="audit" :route="{ name: 'audit' }">审计日志</el-menu-item>
         </el-menu>
       </div>

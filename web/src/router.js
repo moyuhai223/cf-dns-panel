@@ -8,6 +8,7 @@ const routes = [
   { path: '/accounts', name: 'accounts', component: () => import('./views/Accounts.vue') },
   { path: '/ddns', name: 'ddns', component: () => import('./views/Ddns.vue') },
   { path: '/cache', name: 'cache', component: () => import('./views/Cache.vue') },
+  { path: '/rules', name: 'rules', component: () => import('./views/Rules.vue') },
   { path: '/audit', name: 'audit', component: () => import('./views/Audit.vue') },
 ];
 
