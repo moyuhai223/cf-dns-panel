@@ -96,5 +96,9 @@ export function notifyChange(payload) {
 /** Awaited test send — returns per-target results so the UI can report success. */
 export async function sendTest(cfg) {
   const results = await dispatch(cfg, { event: 'test', summary: '这是一条来自 cf-dns-panel 的测试通知' });
-  return results.map((r) => (r.status === 'fulfilled' ? { ok: r.value.ok, status: r.value.status } : { ok: false, error: String(r.reason?.message || r.reason) }));
+  // Never reflect raw rejection text: a Telegram failure's cause can embed the bot
+  // token in the request URL. Report a generic failure marker instead.
+  return results.map((r) =>
+    r.status === 'fulfilled' ? { ok: r.value.ok, status: r.value.status } : { ok: false, error: 'request_failed' },
+  );
 }

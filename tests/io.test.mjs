@@ -12,6 +12,7 @@ import {
   toBind,
 } from '../web/src/dnsio.js';
 import { sanitizeRecord, toFqdn, recordKey } from '../server/cf/records-util.js';
+import { syncRecords, SyncError } from '../server/cf/sync.js';
 
 /* ----------------------------- dnsio (CSV/JSON) ---------------------------- */
 
@@ -173,6 +174,18 @@ test('toFqdn leaves underscore ASCII labels untouched and punycodes IDN', () => 
   assert.equal(toFqdn('_dmarc', 'example.com'), '_dmarc.example.com');
   assert.equal(toFqdn('_acme-challenge.sub', 'example.com'), '_acme-challenge.sub.example.com');
   assert.equal(toFqdn('café', 'example.com'), 'xn--caf-dma.example.com');
+});
+
+/* ------------------------------ sync engine -------------------------------- */
+
+test('syncRecords refuses an oversized record set before touching the network', async () => {
+  // > MAX_RECORDS (5000) must reject up-front, before getZone/listAllRecords run,
+  // so a fake token never reaches Cloudflare.
+  const records = Array.from({ length: 5001 }, (_, i) => ({ type: 'A', name: `h${i}`, content: '1.2.3.4' }));
+  await assert.rejects(
+    () => syncRecords('faketoken', 'zoneid', { records, deleteMissing: true, zoneName: 'example.com' }),
+    (e) => e instanceof SyncError && e.code === 'too_many_records',
+  );
 });
 
 /* ------------------------------ BIND format -------------------------------- */

@@ -2,7 +2,7 @@ import { db } from '../db.js';
 import { decrypt } from '../crypto.js';
 import { requireAuth, clientIp } from '../middleware/auth.js';
 import { listAllRecords, CloudflareError } from '../cf/client.js';
-import { syncRecords } from '../cf/sync.js';
+import { syncRecords, SyncError } from '../cf/sync.js';
 import { writeAudit } from '../services/audit.js';
 import { notifyChange } from '../services/notify.js';
 
@@ -88,9 +88,28 @@ export default async function snapshotRoutes(fastify) {
     }
     if (!Array.isArray(records)) records = [];
 
+    // Refuse restoring a snapshot with no usable (non-SOA/NS) records — a full-sync
+    // of nothing would delete every live record in the zone.
+    const usable = records.filter(
+      (r) =>
+        r &&
+        r.type &&
+        !['SOA', 'NS'].includes(String(r.type).toUpperCase()) &&
+        r.content != null &&
+        String(r.content).trim() !== '',
+    );
+    if (usable.length === 0) {
+      return reply.code(400).send({
+        error: 'empty_snapshot',
+        message: '该快照没有可用记录,回滚会清空整个域名,已拒绝',
+      });
+    }
+
     try {
+      // Omit zoneName so syncRecords derives the *live* zone name from the zone id
+      // (like the import handler). A stale stored name could qualify every record to
+      // the wrong FQDN, make them all look missing, and wipe the zone under deleteMissing.
       const res = await syncRecords(token, snap.zone_id, {
-        zoneName: snap.zone_name,
         records,
         deleteMissing: true,
         dryRun: !!dryRun,
@@ -102,13 +121,17 @@ export default async function snapshotRoutes(fastify) {
       });
       if (!dryRun && (res.created || res.updated || res.deleted)) {
         notifyChange({
-          event: 'batch', zone: snap.zone_name,
+          event: 'batch', zone: res.zoneName || snap.zone_name,
           summary: `回滚快照:新增 ${res.created}、覆盖 ${res.updated}、删除 ${res.deleted}`,
           user: request.user.username,
         });
       }
       return res;
     } catch (e) {
+      if (e instanceof SyncError) {
+        const code = e.code === 'too_many_records' ? 413 : 400;
+        return reply.code(code).send({ error: e.code, message: e.message });
+      }
       return onCf(reply, e);
     }
   });

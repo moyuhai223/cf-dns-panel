@@ -23,18 +23,25 @@ export default async function settingsRoutes(fastify) {
     const b = request.body || {};
     const cur = getNotifyConfig();
     const incomingToken = String(b.telegramToken || '').trim();
+    // Like the token field, an omitted `events` keeps the saved gating; per-key,
+    // only an explicit boolean overrides (?? so `false` sticks, `undefined` keeps current).
+    const ev = b.events;
+    const events =
+      ev === undefined || ev === null
+        ? cur.events
+        : {
+            create: ev.create ?? cur.events.create,
+            update: ev.update ?? cur.events.update,
+            delete: ev.delete ?? cur.events.delete,
+            ddns: ev.ddns ?? cur.events.ddns,
+            batch: ev.batch ?? cur.events.batch,
+          };
     const cfg = {
       enabled: !!b.enabled,
       webhookUrl: String(b.webhookUrl || '').trim(),
       telegramToken: incomingToken || cur.telegramToken,
       telegramChat: String(b.telegramChat || '').trim(),
-      events: {
-        create: b.events?.create !== false,
-        update: b.events?.update !== false,
-        delete: b.events?.delete !== false,
-        ddns: !!b.events?.ddns,
-        batch: b.events?.batch !== false,
-      },
+      events,
     };
     setNotifyConfig(cfg);
     return { ok: true };

@@ -42,7 +42,11 @@ curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/instal
 - 📤 解析记录**导入 / 导出**(CSV / JSON / **BIND .txt**):导入按「同名同类型」**覆盖更新**;支持**导入预演**与可选的**完全同步**(删除文件中没有的记录,跳过 SOA/NS);单次最多 1000 条。
 - 🔁 **DDNS**:给 A/AAAA 记录生成专属更新 URL,在设备上定时调用即把记录更新为来访 IP。
 - ⚡ **缓存管理**:清除缓存(全部 / 按 URL)、开发模式、缓存级别、浏览器缓存 TTL、Always Online、始终 HTTPS、SSL 模式。
-- 📐 **规则引擎**(Rulesets):**Cache Rules**(按表达式设缓存/边缘·浏览器 TTL)、**重定向规则**、**响应头转换**;本地编辑、整组保存。
+- 📐 **规则引擎**(Rulesets):**Cache Rules**(按表达式设缓存/边缘·浏览器 TTL)、**重定向规则**、**响应头转换**;含常用规则模板、本地编辑、整组保存。
+- 🕒 **区域快照 + 一键回滚**:给域名记录打快照,出错时预览差异并一键还原(完全同步,跳过 SOA/NS,每域名留 30 个)。
+- 🔔 **变更通知**:记录增改删 / 导入批量 / DDNS 变更时推 **Webhook / Telegram**(配置加密存储,可测试)。
+- 🛡️ **Token 权限自检**:只读探测令牌可用的功能(列域名 / DNS / 区域设置 / 规则)。
+- 🎨 **界面**:侧边栏布局、Cloudflare 橙主题、**明暗双主题**、品牌登录页。
 - 🧾 每次新增/修改/删除写审计日志(操作者、时间、记录、来源 IP)。
 - 📦 单进程同时托管 SPA 与 `/api`;`node server/index.js` 一键启动。
 
@@ -144,6 +148,7 @@ Docker 方式见 [deploy/Dockerfile](deploy/Dockerfile)。
 | GET/POST/DELETE | `/accounts` `…/:id` | Token 列表 / 录入(先校验) / 删除 |
 | GET | `/accounts/:id/zones` | 列出该 Token 的 zone |
 | GET | `/accounts/:id/search?q=&type=` | 跨所有域名搜索记录 |
+| GET | `/accounts/:id/check` | Token 权限自检(只读探测)|
 | GET/POST | `/zones/:zoneId/records` | 记录列表 / 新增 |
 | PUT/DELETE | `/zones/:zoneId/records/:recordId` | 修改 / 删除 |
 | POST | `/zones/:zoneId/records/bulk-delete` `/bulk-patch` | 批量删除 / 批量改(ttl、proxied) |
@@ -154,6 +159,9 @@ Docker 方式见 [deploy/Dockerfile](deploy/Dockerfile)。
 | GET/PATCH | `/cache/settings` | 读取 / 修改缓存与 SSL 设置 |
 | POST | `/cache/purge` | 清除缓存(全部 / 按 URL) |
 | GET/PUT | `/rules/:phase` | 读取 / 整组替换某规则阶段(缓存/重定向/响应头) |
+| GET/POST/DELETE | `/snapshots` `…/:id` | 区域快照 列表 / 创建 / 删除 |
+| POST | `/snapshots/:id/restore` | 回滚到快照(`dryRun` 预览) |
+| GET/PUT | `/settings/notifications` `/test` | 通知配置 / 测试 |
 | GET | `/audit` | 审计日志(分页) |
 
 ## 安全说明

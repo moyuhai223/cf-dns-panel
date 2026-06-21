@@ -10,6 +10,15 @@ import { sanitizeRecord, toFqdn, recordKey } from './records-util.js';
 
 const MANAGED = new Set(['SOA', 'NS']); // Cloudflare-managed; never created/updated/deleted
 const CONCURRENCY = 6;
+const MAX_RECORDS = 5000; // refuse pathologically large syncs (thousands of serial CF calls)
+
+/** Typed error so callers can map to a 4xx instead of a generic 500. */
+export class SyncError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+  }
+}
 
 /**
  * Upsert `records` into a zone by (type, name). With deleteMissing, existing
@@ -22,6 +31,9 @@ export async function syncRecords(
   zoneId,
   { zoneName, records, deleteMissing = false, dryRun = false, onChange } = {},
 ) {
+  if (records.length > MAX_RECORDS) {
+    throw new SyncError('too_many_records', `记录数 ${records.length} 超过上限 ${MAX_RECORDS},已拒绝`);
+  }
   // Authoritative zone name (so relative names qualify correctly, like import).
   if (!zoneName) zoneName = (await getZone(token, zoneId)).name;
   const existing = await listAllRecords(token, zoneId);
@@ -72,6 +84,13 @@ export async function syncRecords(
   const leftovers = [];
   for (const bucket of byKey.values()) {
     for (const r of bucket) if (!MANAGED.has(r.type)) leftovers.push(r);
+  }
+
+  // A full-sync that resolved to zero valid records would treat every live record
+  // as "missing" and delete the whole zone. Refuse it (matches the import guard).
+  // Fires for dryRun too so the preview surfaces the refusal instead of "delete all".
+  if (deleteMissing && plan.length === 0) {
+    throw new SyncError('empty_plan', '未解析出任何有效记录,已拒绝全量同步(否则会删光整个域名)');
   }
 
   const willCreate = plan.filter((p) => !p.targetId).length;

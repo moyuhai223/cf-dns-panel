@@ -42,6 +42,7 @@ export default async function accountRoutes(fastify) {
   fastify.delete('/:id', async (request) => {
     db.prepare('DELETE FROM accounts WHERE id = ?').run(request.params.id);
     db.prepare('DELETE FROM ddns WHERE account_id = ?').run(request.params.id); // drop orphaned DDNS configs
+    db.prepare('DELETE FROM snapshots WHERE account_id = ?').run(request.params.id); // and snapshots
     return { ok: true };
   });
 
