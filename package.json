@@ -1,6 +1,6 @@
 {
   "name": "cf-dns-panel",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "Self-hosted Cloudflare DNS management panel (designed to run on 127.0.0.1 behind a 1Panel reverse proxy)",

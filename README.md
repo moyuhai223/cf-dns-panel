@@ -38,7 +38,7 @@ curl -fsSL https://raw.githubusercontent.com/moyuhai223/cf-dns-panel/main/instal
 - 🔑 录入多个 Cloudflare API Token(用户令牌与 `cfat_` 账户令牌均可);录入前先校验,落盘 **AES-256-GCM 加密**,列表只显示末 4 位。
 - 🌐 列出 Token 可见的全部 zone;选定后管理 A/AAAA/CNAME/TXT/MX/NS/SRV/CAA 等记录,**客户端即时搜索**(名称/内容/备注)与筛选、分页。
 - 🔎 **全局搜索**:在一个账号下跨**所有域名**搜记录(名称/内容/备注),命中结果标出所属域名,可一键跳转管理或删除。
-- 🟠 A/AAAA/CNAME 支持 proxied(橙云)开关、TTL、优先级;表格**多选批量**删除 / 改 TTL / 开关代理。
+- 🟠 A/AAAA/CNAME 支持 proxied(橙云)开关;记录可设 TTL;MX/SRV 支持优先级;表格**多选批量**删除 / 改 TTL / 开关代理。
 - 📤 解析记录**导入 / 导出**(CSV / JSON / **BIND .txt**):导入按「同名同类型」**覆盖更新**;支持**导入预演**与可选的**完全同步**(删除文件中没有的记录,跳过 SOA/NS);单次最多 1000 条。
 - 🔁 **DDNS**:给 A/AAAA 记录生成专属更新 URL,在设备上定时调用即把记录更新为来访 IP。
 - ⚡ **缓存管理**:清除缓存(全部 / 按 URL)、开发模式、缓存级别、浏览器缓存 TTL、Always Online、始终 HTTPS、SSL 模式。
@@ -173,6 +173,7 @@ Docker 方式见 [deploy/Dockerfile](deploy/Dockerfile)。
 
 ## 已知边界 / 后续
 
-- MVP 为**单管理员**;多用户与权限、登录 2FA 为后续项。
+- 面板为**单管理员**模型;多用户与细粒度权限为后续项(登录 2FA 已支持)。
 - SRV/CAA 等结构化记录目前以 `content` 字符串提交,复杂场景以 Cloudflare 返回的报错为准。
-- 记录批量导入/导出(BIND/CSV)、跨 zone 搜索为后续项。
+- 写类操作(快照回滚、规则整组保存、DDNS 更新等)建议先在测试域名上验证;
+  **回滚为完全同步**(会删除快照中没有的记录),执行前可用 `dryRun` 预览差异。
