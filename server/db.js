@@ -66,6 +66,16 @@ CREATE TABLE IF NOT EXISTS ddns (
 );
 `);
 
+// Lightweight migrations: add columns to existing installs without data loss.
+function ensureColumn(table, column, definition) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+ensureColumn('users', 'totp_secret', 'TEXT'); // encrypted base32 TOTP secret
+ensureColumn('users', 'totp_enabled', 'INTEGER NOT NULL DEFAULT 0');
+
 export function isSetupComplete() {
   return db.prepare('SELECT COUNT(*) AS c FROM users').get().c > 0;
 }

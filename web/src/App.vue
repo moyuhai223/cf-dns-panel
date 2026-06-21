@@ -43,6 +43,76 @@ async function savePw() {
     pwSaving.value = false;
   }
 }
+
+function onCommand(c) {
+  if (c === 'logout') onLogout();
+  else if (c === 'password') openPw();
+  else if (c === '2fa') open2fa();
+}
+
+// two-factor dialog
+const twofaVisible = ref(false);
+const twofaMode = ref('intro'); // intro | setup
+const twofaSecret = ref('');
+const twofaQr = ref('');
+const twofaCode = ref('');
+const twofaPassword = ref('');
+const twofaBusy = ref(false);
+
+function open2fa() {
+  twofaMode.value = 'intro';
+  twofaSecret.value = '';
+  twofaQr.value = '';
+  twofaCode.value = '';
+  twofaPassword.value = '';
+  twofaVisible.value = true;
+}
+
+async function start2fa() {
+  twofaBusy.value = true;
+  try {
+    const r = await api.post('api/auth/2fa/setup');
+    twofaSecret.value = r.secret;
+    const QR = await import('qrcode'); // code-split: only loaded when setting up 2FA
+    twofaQr.value = await QR.default.toDataURL(r.uri, { margin: 1, width: 200 });
+    twofaMode.value = 'setup';
+  } catch (e) {
+    ElMessage.error(e.message);
+  } finally {
+    twofaBusy.value = false;
+  }
+}
+
+async function enable2fa() {
+  twofaBusy.value = true;
+  try {
+    await api.post('api/auth/2fa/enable', { code: twofaCode.value });
+    store.twoFactor = true;
+    ElMessage.success('两步验证已开启');
+    twofaVisible.value = false;
+  } catch (e) {
+    ElMessage.error(e.message);
+  } finally {
+    twofaBusy.value = false;
+  }
+}
+
+async function disable2fa() {
+  twofaBusy.value = true;
+  try {
+    await api.post('api/auth/2fa/disable', {
+      password: twofaPassword.value,
+      code: twofaCode.value,
+    });
+    store.twoFactor = false;
+    ElMessage.success('两步验证已关闭');
+    twofaVisible.value = false;
+  } catch (e) {
+    ElMessage.error(e.message);
+  } finally {
+    twofaBusy.value = false;
+  }
+}
 </script>
 
 <template>
@@ -59,7 +129,7 @@ async function savePw() {
           <el-menu-item index="audit" :route="{ name: 'audit' }">审计日志</el-menu-item>
         </el-menu>
       </div>
-      <el-dropdown @command="(c) => (c === 'logout' ? onLogout() : openPw())">
+      <el-dropdown @command="onCommand">
         <span style="cursor: pointer">
           <el-icon><User /></el-icon>
           {{ store.username }}
@@ -68,6 +138,9 @@ async function savePw() {
         <template #dropdown>
           <el-dropdown-menu>
             <el-dropdown-item command="password">修改密码</el-dropdown-item>
+            <el-dropdown-item command="2fa">
+              两步验证<span v-if="store.twoFactor" style="color: #67c23a"> ·已开启</span>
+            </el-dropdown-item>
             <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
           </el-dropdown-menu>
         </template>
@@ -96,6 +169,53 @@ async function savePw() {
     <template #footer>
       <el-button @click="pwVisible = false">取消</el-button>
       <el-button type="primary" :loading="pwSaving" @click="savePw">保存</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="twofaVisible" title="两步验证 (2FA)" width="420px">
+    <div v-if="store.twoFactor">
+      <p>两步验证已<b style="color: #67c23a">开启</b>。关闭需验证密码与当前验证码。</p>
+      <el-form label-width="84px">
+        <el-form-item label="密码">
+          <el-input v-model="twofaPassword" type="password" show-password />
+        </el-form-item>
+        <el-form-item label="验证码">
+          <el-input v-model="twofaCode" maxlength="6" placeholder="当前 6 位码" />
+        </el-form-item>
+      </el-form>
+    </div>
+
+    <div v-else-if="twofaMode === 'setup'">
+      <p>用身份验证器 App(Google Authenticator / 1Password / Authy 等)扫码,或手动输入密钥:</p>
+      <div style="text-align: center">
+        <img :src="twofaQr" alt="TOTP QR" style="width: 200px; height: 200px" />
+      </div>
+      <p class="muted" style="word-break: break-all; text-align: center">密钥:{{ twofaSecret }}</p>
+      <el-form label-width="84px">
+        <el-form-item label="验证码">
+          <el-input
+            v-model="twofaCode"
+            maxlength="6"
+            placeholder="输入 App 显示的 6 位码"
+            @keyup.enter="enable2fa"
+          />
+        </el-form-item>
+      </el-form>
+    </div>
+
+    <div v-else>
+      <p>开启后,登录除密码外还需身份验证器 App 的 6 位动态码,账号更安全。</p>
+    </div>
+
+    <template #footer>
+      <el-button @click="twofaVisible = false">取消</el-button>
+      <el-button v-if="store.twoFactor" type="danger" :loading="twofaBusy" @click="disable2fa">
+        关闭两步验证
+      </el-button>
+      <el-button v-else-if="twofaMode === 'setup'" type="primary" :loading="twofaBusy" @click="enable2fa">
+        启用
+      </el-button>
+      <el-button v-else type="primary" :loading="twofaBusy" @click="start2fa">开始设置</el-button>
     </template>
   </el-dialog>
 </template>

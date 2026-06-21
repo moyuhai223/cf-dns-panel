@@ -6,16 +6,23 @@ import { useAppStore } from '../store/auth';
 
 const store = useAppStore();
 const router = useRouter();
-const form = ref({ username: '', password: '' });
+const form = ref({ username: '', password: '', code: '' });
+const needCode = ref(false);
 const loading = ref(false);
 
 async function submit() {
   loading.value = true;
   try {
-    await store.login(form.value.username, form.value.password);
+    await store.login(form.value.username, form.value.password, needCode.value ? form.value.code : undefined);
     router.push({ name: 'records' });
   } catch (e) {
-    ElMessage.error(e.message);
+    if (e.data?.error === 'totp_required') {
+      needCode.value = true;
+      ElMessage.info('该账号已开启两步验证,请输入验证码');
+    } else {
+      if (e.data?.error === 'totp_invalid') form.value.code = '';
+      ElMessage.error(e.message);
+    }
   } finally {
     loading.value = false;
   }
@@ -37,6 +44,15 @@ async function submit() {
             type="password"
             show-password
             autocomplete="current-password"
+            @keyup.enter="submit"
+          />
+        </el-form-item>
+        <el-form-item v-if="needCode" label="两步验证码">
+          <el-input
+            v-model="form.code"
+            placeholder="身份验证器 App 的 6 位码"
+            maxlength="6"
+            autocomplete="one-time-code"
             @keyup.enter="submit"
           />
         </el-form-item>
